@@ -13,6 +13,7 @@ import { RacePicker } from "./components/races/RacePicker";
 
 export default function App() {
   const kind = useDashboard((s) => s.kind);
+  const trackExpanded = useDashboard((s) => s.trackExpanded);
   const backend = useDashboard((s) => s.replayBackend);
   const source = useMemo(() => createDataSource(kind, backend), [kind, backend]);
   useKeyboardShortcuts();
@@ -35,23 +36,32 @@ export default function App() {
         <ErrorBoundary name="Top bar">
           <TopBar />
         </ErrorBoundary>
-        <main className="grid min-h-0 flex-1 grid-cols-1 gap-3 overflow-y-auto p-3 lg:grid-cols-[minmax(560px,38%)_1fr] lg:overflow-hidden">
+        <main className="grid min-h-0 flex-1 grid-cols-1 gap-3 overflow-y-auto p-3 lg:grid-cols-[minmax(540px,34%)_1fr] lg:overflow-hidden">
           <div className="min-h-[600px] lg:min-h-0">
             <ErrorBoundary name="Timing tower">
               <TimingTower />
             </ErrorBoundary>
           </div>
-          <div className="grid min-h-0 grid-rows-[200px_minmax(420px,1fr)] gap-3 lg:grid-rows-[minmax(150px,24%)_1fr]">
-            <ErrorBoundary name="Team radio">
-              <RadioFeed />
-            </ErrorBoundary>
-            <div className="grid min-h-0 grid-cols-[1fr_230px] gap-3">
+          {/* The map takes most of the right side; Expand (or M) gives it the whole column. */}
+          <div
+            className={`grid min-h-0 gap-3 ${
+              trackExpanded ? "grid-rows-[minmax(520px,1fr)]" : "grid-rows-[170px_minmax(480px,1fr)] lg:grid-rows-[150px_1fr]"
+            }`}
+          >
+            {!trackExpanded && (
+              <ErrorBoundary name="Team radio">
+                <RadioFeed />
+              </ErrorBoundary>
+            )}
+            <div className={`grid min-h-0 gap-3 ${trackExpanded ? "grid-cols-1" : "grid-cols-[1fr_210px]"}`}>
               <ErrorBoundary name="Track map">
                 <TrackMap />
               </ErrorBoundary>
-              <ErrorBoundary name="Positions">
-                <PositionPanel />
-              </ErrorBoundary>
+              {!trackExpanded && (
+                <ErrorBoundary name="Positions">
+                  <PositionPanel />
+                </ErrorBoundary>
+              )}
             </div>
           </div>
         </main>

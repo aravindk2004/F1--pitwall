@@ -24,6 +24,8 @@ interface DashboardState {
   kind: SourceKind;
   replayBackend: ReplayBackend;
   racePickerOpen: boolean;
+  /** Track map enlarged over the radio and positions panels. */
+  trackExpanded: boolean;
   showResults: boolean;
   snapshot: F1Snapshot;
   status: SourceStatus;
@@ -36,6 +38,7 @@ interface DashboardState {
   setKind(kind: SourceKind): void;
   setReplayBackend(backend: ReplayBackend): void;
   setRacePickerOpen(open: boolean): void;
+  toggleTrackExpanded(): void;
   setShowResults(show: boolean): void;
   setSourceState(snapshot: F1Snapshot, status: SourceStatus, mode: SourceMode): void;
   setHovered(h: HoverTarget | null): void;
@@ -64,6 +67,7 @@ export const useDashboard = create<DashboardState>((set) => ({
   // A hosted demo opens on the race list so visitors pick what to watch.
   racePickerOpen: STATIC_SITE && initialSourceKind() === "replay",
   showResults: false,
+  trackExpanded: false,
   snapshot: emptySnapshot(),
   status: "OFFLINE",
   mode: "replay",
@@ -75,6 +79,7 @@ export const useDashboard = create<DashboardState>((set) => ({
   setKind: (kind) => set({ kind, snapshot: emptySnapshot(), hovered: null }),
   setReplayBackend: (replayBackend) => set({ replayBackend, snapshot: emptySnapshot(), hovered: null }),
   setRacePickerOpen: (racePickerOpen) => set({ racePickerOpen }),
+  toggleTrackExpanded: () => set((s) => ({ trackExpanded: !s.trackExpanded })),
   setShowResults: (showResults) => set({ showResults }),
   setSourceState: (snapshot, status, mode) => set({ snapshot, status, mode }),
   setHovered: (hovered) => set({ hovered }),

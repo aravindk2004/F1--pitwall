@@ -105,6 +105,7 @@ This build hides Live mode and the OpenF1 option, since a hosted page can't reac
 | `Space` | Pause / resume the positions-panel cycle |
 | `1`–`5` | Gap, tyre age, speed, last lap, pit stops |
 | `F` | Toggle fullscreen |
+| `M` | Enlarge the track map over the radio and positions panels (or use **Expand** on the map) |
 
 ## Architecture
 

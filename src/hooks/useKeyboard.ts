@@ -2,7 +2,7 @@ import { useEffect } from "react";
 import { STAT_VIEWS, useDashboard } from "../state/store";
 import { toggleFullscreen } from "../components/layout/TopBar";
 
-/** Space: pause cycling · 1–5: pick stat view · F: fullscreen. */
+/** Space: pause cycling · 1–5: pick stat view · F: fullscreen · M: enlarge the map. */
 export function useKeyboardShortcuts(): void {
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -19,6 +19,8 @@ export function useKeyboardShortcuts(): void {
         s.setView(Number(e.key) - 1);
       } else if (e.key === "f" || e.key === "F") {
         toggleFullscreen();
+      } else if (e.key === "m" || e.key === "M") {
+        s.toggleTrackExpanded();
       }
     };
     window.addEventListener("keydown", onKey);

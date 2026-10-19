@@ -1,17 +1,18 @@
-import { memo, useMemo, useRef } from "react";
+import { memo, useEffect, useMemo, useRef, useState } from "react";
 import { useDashboard, useSnap } from "../../state/store";
 import type { Point, TrackLayout } from "../../data/types";
 import { Panel } from "../common/Panel";
 import { RaceControlTicker } from "./RaceControlTicker";
 
-const VIEW = 1000;
-const PAD = 60;
+/** Drawing height in SVG units; the width follows the panel's shape so the map fills it. */
+const VIEW_H = 1000;
+const PAD = 40;
 
 interface Projection {
   project(p: Point): Point;
 }
 
-function makeProjection(points: Point[]): Projection | null {
+function makeProjection(points: Point[], viewW: number): Projection | null {
   if (points.length < 2) return null;
   let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
   for (const p of points) {
@@ -21,8 +22,8 @@ function makeProjection(points: Point[]): Projection | null {
     maxY = Math.max(maxY, p.y);
   }
   const w = Math.max(1, maxX - minX), h = Math.max(1, maxY - minY);
-  const scale = (VIEW - PAD * 2) / Math.max(w, h);
-  const ox = (VIEW - w * scale) / 2, oy = (VIEW - h * scale) / 2;
+  const scale = Math.min((viewW - PAD * 2) / w, (VIEW_H - PAD * 2) / h);
+  const ox = (viewW - w * scale) / 2, oy = (VIEW_H - h * scale) / 2;
   // Timing coordinates are y-up; SVG is y-down.
   return { project: (p) => ({ x: ox + (p.x - minX) * scale, y: oy + (maxY - p.y) * scale }) };
 }
@@ -139,14 +140,34 @@ function CircuitCard() {
   );
 }
 
+/** Width of the drawing in SVG units, matching the panel's aspect ratio. */
+function useViewWidth(ref: React.RefObject<HTMLDivElement>): number {
+  const [viewW, setViewW] = useState(VIEW_H);
+  useEffect(() => {
+    const el = ref.current;
+    if (!el || typeof ResizeObserver === "undefined") return;
+    const ro = new ResizeObserver(([entry]) => {
+      const { width, height } = entry.contentRect;
+      if (width > 0 && height > 0) setViewW(Math.round(VIEW_H * Math.min(4, Math.max(0.5, width / height))));
+    });
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [ref]);
+  return viewW;
+}
+
 export function TrackMap() {
+  const expanded = useDashboard((s) => s.trackExpanded);
+  const toggleExpanded = useDashboard((s) => s.toggleTrackExpanded);
+  const frame = useRef<HTMLDivElement>(null);
+  const viewW = useViewWidth(frame);
   const track = useSnap((s) => s.track);
   const hasLocations = useSnap((s) => Object.keys(s.locations).length > 0);
   const session = useSnap((s) => s.session);
   // Until a lap has been traced, frame the area the cars have covered so far.
   const liveLocations = useSnap((s) => (s.track ? null : s.locations));
   const seen = useRef<Point[]>([]);
-  const trackProj = useMemo(() => (track ? makeProjection(track.points) : null), [track]);
+  const trackProj = useMemo(() => (track ? makeProjection(track.points, viewW) : null), [track, viewW]);
   let proj = trackProj;
   if (!track && liveLocations) {
     const box = seen.current;
@@ -155,23 +176,39 @@ export function TrackMap() {
       box[0] = { x: Math.min(box[0].x, p.x), y: Math.min(box[0].y, p.y) };
       box[1] = { x: Math.max(box[1].x, p.x), y: Math.max(box[1].y, p.y) };
     }
-    proj = box.length === 2 ? makeProjection(box) : null;
+    proj = box.length === 2 ? makeProjection(box, viewW) : null;
   }
 
   return (
     <Panel
       title="Track"
-      right={<span className="truncate text-[11px] text-white/40">{session ? session.name : "--"}</span>}
+      right={
+        <div className="flex min-w-0 items-center gap-3">
+          <span className="truncate text-[11px] text-white/40">{session ? session.name : "--"}</span>
+          <button
+            onClick={toggleExpanded}
+            className="flex h-6 shrink-0 items-center gap-1.5 rounded border border-white/10 px-2 text-[10px] font-semibold uppercase tracking-wider text-white/60 hover:border-cyan-glow/50 hover:text-cyan-glow"
+            title={expanded ? "Show radio and positions again (M)" : "Enlarge the map (M)"}
+            aria-pressed={expanded}
+          >
+            <svg width="10" height="10" viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="1.5" aria-hidden="true">
+              {expanded ? <path d="M4 1v3H1M8 1v3h3M11 8H8v3M1 8h3v3" /> : <path d="M1 4V1h3M8 1h3v3M11 8v3H8M4 11H1V8" />}
+            </svg>
+            {expanded ? "Shrink" : "Expand"}
+          </button>
+        </div>
+      }
       bodyClassName="relative"
     >
-      <svg viewBox={`0 0 ${VIEW} ${VIEW}`} className="absolute inset-0 h-full w-full" preserveAspectRatio="xMidYMid meet">
+      <div ref={frame} className="absolute inset-0" />
+      <svg viewBox={`0 0 ${viewW} ${VIEW_H}`} className="absolute inset-0 h-full w-full" preserveAspectRatio="xMidYMid meet">
         <defs>
           <radialGradient id="mapGlow" cx="50%" cy="50%" r="50%">
             <stop offset="0%" stopColor="#22e5ff" stopOpacity="0.05" />
             <stop offset="100%" stopColor="#22e5ff" stopOpacity="0" />
           </radialGradient>
         </defs>
-        <rect width={VIEW} height={VIEW} fill="url(#mapGlow)" />
+        <rect width={viewW} height={VIEW_H} fill="url(#mapGlow)" />
         {track && proj && <TrackShape track={track} proj={proj} />}
         {proj && <DriverDots proj={proj} />}
       </svg>
