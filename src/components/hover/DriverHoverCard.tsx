@@ -4,7 +4,7 @@ import { TyreIcon } from "../common/TyreIcon";
 import { Speedometer } from "./Speedometer";
 
 const CARD_W = 300;
-const CARD_H = 380;
+const CARD_H = 470;
 const MAX_RPM = 13000;
 
 function DrsPill({ drs }: { drs: number | null }) {
@@ -36,6 +36,11 @@ export function DriverHoverCard() {
   const hovered = useDashboard((s) => s.hovered);
   const d = useDashboard((s) => (s.hovered ? s.snapshot.drivers[s.hovered.driver] : undefined));
   const car = useDashboard((s) => (s.hovered ? s.snapshot.car[s.hovered.driver] : undefined));
+  const pace = useDashboard((s) => (s.hovered ? s.insights?.pace[s.hovered.driver] : undefined));
+  const pit = useDashboard((s) => (s.hovered ? s.insights?.pit[s.hovered.driver] : undefined));
+  const trend = useDashboard((s) => (s.hovered ? s.insights?.trends[s.hovered.driver] : undefined));
+  const allDrivers = useDashboard((s) => s.snapshot.drivers);
+  const codeOf = (n: number | null | undefined) => (n != null ? (allDrivers[n]?.code ?? String(n)) : MISSING);
   if (!hovered) return null;
 
   const vw = typeof window !== "undefined" ? window.innerWidth : 1600;
@@ -98,7 +103,54 @@ export function DriverHoverCard() {
             <div className="font-mono text-sm text-white">{d?.tyre.age != null ? `${d.tyre.age} lap${d.tyre.age === 1 ? "" : "s"}` : MISSING}</div>
           </div>
         </div>
+        {!d?.retired && (
+          <div className="col-span-3 flex flex-col gap-1.5 bg-ink-900 px-4 py-2.5 text-[11px]">
+            <div className="text-[10px] uppercase tracking-wider text-white/40">Strategy</div>
+            <StrategyLine label="Tyre wear">
+              {pace?.degradation == null
+                ? `${MISSING} (${pace?.laps ?? 0} clean laps)`
+                : pace.degradation < 0
+                  ? "Getting faster (track improving)"
+                  : `+${pace.degradation.toFixed(2)} s/lap`}
+              {pace?.cliff && <span className="ml-1.5 rounded bg-red-500/20 px-1 text-[9px] font-bold text-red-300">DROPPING OFF</span>}
+            </StrategyLine>
+            <StrategyLine label="Pit now">
+              {pit ? (
+                <>
+                  P{pit.rejoinPosition}
+                  {pit.carAhead && ` · ${pit.carAhead.margin.toFixed(1)} s behind ${codeOf(pit.carAhead.driver)}`}
+                  {pit.traffic && <span className="ml-1.5 rounded bg-amber-500/20 px-1 text-[9px] font-bold text-amber-300">TRAFFIC</span>}
+                  {pit.pressure && <span className="ml-1.5 rounded bg-amber-500/20 px-1 text-[9px] font-bold text-amber-300">PRESSURE</span>}
+                </>
+              ) : (
+                MISSING
+              )}
+            </StrategyLine>
+            <StrategyLine label="Car ahead">
+              {trend?.ahead == null
+                ? MISSING
+                : trend.battle
+                  ? `Battling ${codeOf(trend.ahead)}`
+                  : trend.ratePerLap == null
+                    ? MISSING
+                    : trend.ratePerLap < -0.05
+                      ? `Closing on ${codeOf(trend.ahead)} ${(-trend.ratePerLap).toFixed(2)} s/lap${trend.lapsToCatch ? ` · ~${trend.lapsToCatch} laps` : ""}`
+                      : trend.ratePerLap > 0.05
+                        ? `Losing ${trend.ratePerLap.toFixed(2)} s/lap to ${codeOf(trend.ahead)}`
+                        : `Holding gap to ${codeOf(trend.ahead)}`}
+            </StrategyLine>
+          </div>
+        )}
       </div>
+    </div>
+  );
+}
+
+function StrategyLine({ label, children }: { label: string; children: React.ReactNode }) {
+  return (
+    <div className="flex items-baseline gap-2">
+      <span className="w-16 shrink-0 text-white/40">{label}</span>
+      <span className="min-w-0 text-white/85">{children}</span>
     </div>
   );
 }

@@ -194,6 +194,14 @@ describe("events", () => {
     expect(ev[0].text).toContain("D2 passes D1");
   });
 
+  it("ignores two cars swapping back and forth", () => {
+    const t = new EventTracker();
+    t.update(base(1000, { 1: 1, 2: 2 }));
+    expect(t.update(base(2000, { 1: 2, 2: 1 }))).toHaveLength(1);
+    expect(t.update(base(5000, { 1: 1, 2: 2 }))).toHaveLength(0);
+    expect(t.update(base(8000, { 1: 2, 2: 1 }))).toHaveLength(0);
+  });
+
   it("ignores jumps in time such as scrubbing", () => {
     const t = new EventTracker();
     t.update(base(1000, { 1: 1, 2: 2 }));

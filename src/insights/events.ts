@@ -17,6 +17,7 @@ export interface RaceEvent {
 
 /** A jump in the source clock bigger than this (e.g. scrubbing) resets the comparison. */
 const MAX_STEP_MS = 30_000;
+const FLICKER_MS = 45_000;
 
 const FLAG_PATTERNS: Array<[RegExp, string]> = [
   [/RED FLAG/, "Red flag"],
@@ -32,12 +33,15 @@ export class EventTracker {
   private seenMessages = new Set<string>();
   private counter = 0;
   private lastPit = new Map<number, number>();
+  /** Recent position swaps per pair of cars, to ignore timing flicker. */
+  private lastSwap = new Map<string, number>();
 
   reset(): void {
     this.prev = null;
     this.fastest = null;
     this.seenMessages.clear();
     this.lastPit.clear();
+    this.lastSwap.clear();
   }
 
   /** Compare with the previous snapshot and return anything new. */
@@ -79,7 +83,13 @@ export class EventTracker {
           const a = s.drivers[m], b = prev.drivers[m];
           return a && b && b.position === d.position && a.position === p.position && !a.inPit && !a.retired && (a.pitStops ?? 0) === (b.pitStops ?? 0);
         });
-        if (passed != null) add("overtake", `${code(n)} passes ${code(passed)} for P${d.position}`, [n, passed]);
+        if (passed != null) {
+          // The same two cars swapping again within 45 s is timing flicker, not a new move.
+          const pair = [n, passed].sort((a, b) => a - b).join("-");
+          const last = this.lastSwap.get(pair);
+          this.lastSwap.set(pair, now);
+          if (last == null || now - last > FLICKER_MS) add("overtake", `${code(n)} passes ${code(passed)} for P${d.position}`, [n, passed]);
+        }
       }
     }
 

@@ -3,6 +3,7 @@ import { useDashboard, useSnap } from "../../state/store";
 import type { RadioMessage } from "../../data/types";
 import { fmtAgo } from "../../lib/format";
 import { Panel } from "../common/Panel";
+import { AlertToggles, EventList } from "../events/EventFeed";
 
 type PlayState = { id: string; progress: number; error?: boolean } | null;
 
@@ -28,7 +29,33 @@ function RadioToggle() {
   );
 }
 
+type FeedTab = "radio" | "events";
+
+function FeedTabs({ tab, setTab }: { tab: FeedTab; setTab(t: FeedTab): void }) {
+  const count = useDashboard((s) => s.events.length);
+  const tabs: Array<[FeedTab, string]> = [
+    ["radio", "Team radio"],
+    ["events", `Events${count ? ` · ${count}` : ""}`],
+  ];
+  return (
+    <span className="flex items-center gap-3" role="tablist">
+      {tabs.map(([t, label]) => (
+        <button
+          key={t}
+          role="tab"
+          aria-selected={tab === t}
+          onClick={() => setTab(t)}
+          className={`uppercase tracking-[0.18em] transition-colors ${tab === t ? "text-white/80" : "text-white/35 hover:text-white/60"}`}
+        >
+          {label}
+        </button>
+      ))}
+    </span>
+  );
+}
+
 export function RadioFeed() {
+  const [tab, setTab] = useState<FeedTab>("radio");
   const radio = useSnap((s) => s.radio);
   const drivers = useSnap((s) => s.drivers);
   const now = useSnap((s) => s.playback?.time ?? null);
@@ -84,8 +111,14 @@ export function RadioFeed() {
   const ref = now ?? wallNow;
 
   return (
-    <Panel title="Team radio" right={<RadioToggle />} bodyClassName="overflow-y-auto">
-      {radio.length === 0 ? (
+    <Panel
+      title={<FeedTabs tab={tab} setTab={setTab} />}
+      right={tab === "radio" ? <RadioToggle /> : <AlertToggles />}
+      bodyClassName="overflow-y-auto"
+    >
+      {tab === "events" ? (
+        <EventList />
+      ) : radio.length === 0 ? (
         <div className="flex h-full items-center justify-center p-4 text-sm text-white/35">No radio yet · --</div>
       ) : (
         <ul className="grid grid-cols-1 gap-1.5 p-2 xl:grid-cols-2">

@@ -3,6 +3,7 @@ import { useDashboard, useSnap } from "../../state/store";
 import type { Point, TrackLayout } from "../../data/types";
 import { Panel } from "../common/Panel";
 import { RaceControlTicker } from "./RaceControlTicker";
+import { useDataSource } from "../../data/context";
 
 /** Drawing height in SVG units; the width follows the panel's shape so the map fills it. */
 const VIEW_H = 1000;
@@ -69,11 +70,38 @@ const TrackShape = memo(function TrackShape({ track, proj }: { track: TrackLayou
   );
 });
 
+/**
+ * Where the focused car would be if it pitted now: the spot it passed `pit loss`
+ * seconds ago, since a stop costs that much time against the cars around it.
+ */
+function PitGhost({ proj }: { proj: Projection }) {
+  const source = useDataSource();
+  const focus = useDashboard((s) => s.hovered?.driver ?? s.selected);
+  const pit = useDashboard((s) => (focus != null ? s.insights?.pit[focus] : undefined));
+  const d = useSnap((s) => (focus != null ? s.drivers[focus] : undefined));
+  useSnap((s) => s.locations); // re-render as the cars move
+  if (focus == null || !pit || !d || d.inPit || d.retired || !source?.pastLocation) return null;
+  const at = source.pastLocation(focus, pit.pitLoss);
+  if (!at) return null;
+  const p = proj.project(at);
+  return (
+    <g transform={`translate(${p.x.toFixed(1)} ${p.y.toFixed(1)})`} pointerEvents="none">
+      <circle r="13" fill="none" stroke={d.teamColor} strokeWidth="2.5" strokeDasharray="4 3" opacity="0.9" />
+      <circle r="4" fill={d.teamColor} opacity="0.7" />
+      <text x="16" y="18" fontSize="14" fontWeight="800" fill="#e7f9ff" fontFamily="Inter, sans-serif" stroke="#0a0a0c" strokeWidth="4" paintOrder="stroke">
+        {`IF ${d.code} PITS → P${pit.rejoinPosition}`}
+      </text>
+    </g>
+  );
+}
+
 function DriverDots({ proj }: { proj: Projection }) {
   const locations = useSnap((s) => s.locations);
   const drivers = useSnap((s) => s.drivers);
   const hovered = useDashboard((s) => s.hovered?.driver ?? null);
+  const selected = useDashboard((s) => s.selected);
   const setHovered = useDashboard((s) => s.setHovered);
+  const toggleSelected = useDashboard((s) => s.toggleSelected);
   const entries = Object.entries(locations)
     .map(([n, p]) => ({ n: Number(n), p: proj.project(p) }))
     // Leader drawn last so it sits on top.
@@ -84,7 +112,7 @@ function DriverDots({ proj }: { proj: Projection }) {
       {entries.map(({ n, p }) => {
         const d = drivers[n];
         const color = d?.teamColor ?? "#8a8a96";
-        const isHover = hovered === n;
+        const isHover = hovered === n || selected === n;
         return (
           <g
             key={n}
@@ -93,6 +121,7 @@ function DriverDots({ proj }: { proj: Projection }) {
             onMouseEnter={(e) => setHovered({ driver: n, x: e.clientX, y: e.clientY })}
             onMouseMove={(e) => setHovered({ driver: n, x: e.clientX, y: e.clientY })}
             onMouseLeave={() => setHovered(null)}
+            onClick={() => toggleSelected(n)}
           >
             <circle r={isHover ? 22 : 16} fill={color} opacity="0.18" />
             <circle r={isHover ? 12 : 9.5} fill={color} stroke={isHover ? "#22e5ff" : "#0a0a0c"} strokeWidth={isHover ? 3 : 2.5} />
@@ -210,6 +239,7 @@ export function TrackMap() {
         </defs>
         <rect width={viewW} height={VIEW_H} fill="url(#mapGlow)" />
         {track && proj && <TrackShape track={track} proj={proj} />}
+        {proj && <PitGhost proj={proj} />}
         {proj && <DriverDots proj={proj} />}
       </svg>
       {!track && (

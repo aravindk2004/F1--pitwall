@@ -1,6 +1,7 @@
 import { memo, useState } from "react";
 import { useDashboard, useSnap } from "../../state/store";
 import type { DriverState, SectorStatus } from "../../data/types";
+import type { GapTrend } from "../../insights";
 import { fmtGap, fmtLap, fmtSector, isLeaderGap, MISSING } from "../../lib/format";
 import { Panel } from "../common/Panel";
 import { TyreIcon } from "../common/TyreIcon";
@@ -27,9 +28,28 @@ function SectorCell({ value, status }: { value: number | null; status: SectorSta
 
 const GRID = "grid grid-cols-[28px_4px_minmax(0,1fr)_76px_74px_52px_52px_52px_30px] items-center gap-x-2";
 
-const Row = memo(function Row({ d, showGap }: { d: DriverState; showGap: boolean }) {
+/** Arrow showing whether the gap to the car ahead is shrinking or growing. */
+function TrendArrow({ trend }: { trend: GapTrend | undefined }) {
+  const rate = trend?.ratePerLap;
+  if (rate == null || Math.abs(rate) < 0.05) return <span className="w-2" />;
+  const closing = rate < 0;
+  const title = closing
+    ? `Closing ${(-rate).toFixed(2)} s/lap${trend?.lapsToCatch ? ` · within 1 s in ~${trend.lapsToCatch} laps` : ""}`
+    : `Dropping back ${rate.toFixed(2)} s/lap`;
+  return (
+    <svg width="8" height="8" viewBox="0 0 8 8" className="shrink-0" role="img" aria-label={title}>
+      <title>{title}</title>
+      {closing ? <path d="M4 7 L7.5 1.5 L0.5 1.5 Z" fill="#22c55e" /> : <path d="M4 1 L7.5 6.5 L0.5 6.5 Z" fill="#ffffff" fillOpacity="0.3" />}
+    </svg>
+  );
+}
+
+const Row = memo(function Row({ d, showGap, trend }: { d: DriverState; showGap: boolean; trend: GapTrend | undefined }) {
   const setHovered = useDashboard((s) => s.setHovered);
+  const toggleSelected = useDashboard((s) => s.toggleSelected);
   const hovered = useDashboard((s) => s.hovered?.driver === d.number);
+  const selected = useDashboard((s) => s.selected === d.number);
+  const battle = !d.retired && !d.inPit && trend?.battle;
   const value = showGap ? d.gapToLeader : d.interval;
   const leader = d.position === 1 || isLeaderGap(value);
   let gapText = d.retired ? "OUT" : leader ? "LEADER" : fmtGap(value);
@@ -38,9 +58,13 @@ const Row = memo(function Row({ d, showGap }: { d: DriverState; showGap: boolean
 
   return (
     <div
-      className={`${GRID} h-[30px] cursor-default rounded-md px-2 transition-colors ${
+      className={`${GRID} h-[30px] cursor-pointer rounded-md px-2 transition-colors ${
         d.retired ? "opacity-35 grayscale" : ""
-      } ${hovered ? "bg-cyan-glow/[0.08]" : "hover:bg-white/[0.04]"}`}
+      } ${hovered ? "bg-cyan-glow/[0.08]" : "hover:bg-white/[0.04]"} ${selected ? "ring-1 ring-inset ring-cyan-glow/60" : ""} ${
+        battle ? "shadow-[inset_3px_0_0_#f59e0b]" : ""
+      }`}
+      onClick={() => toggleSelected(d.number)}
+      title={battle ? "Battle: within 1 s of the car ahead" : "Click to follow this driver"}
       onMouseEnter={(e) => setHovered({ driver: d.number, x: e.clientX, y: e.clientY })}
       onMouseMove={(e) => setHovered({ driver: d.number, x: e.clientX, y: e.clientY })}
       onMouseLeave={() => setHovered(null)}
@@ -52,11 +76,20 @@ const Row = memo(function Row({ d, showGap }: { d: DriverState; showGap: boolean
         <span className="truncate text-[11px] text-white/35">{d.team}</span>
       </div>
       <span
-        className={`text-right font-mono text-[12px] tabular-nums ${
-          d.retired ? "font-bold text-white/60" : gapText === "PIT" ? "font-bold text-cyan-glow" : leader ? "text-cyan-glow/80" : "text-white/80"
+        className={`flex items-center justify-end gap-1 font-mono text-[12px] tabular-nums ${
+          d.retired
+            ? "font-bold text-white/60"
+            : gapText === "PIT"
+              ? "font-bold text-cyan-glow"
+              : leader
+                ? "text-cyan-glow/80"
+                : battle && !showGap
+                  ? "font-semibold text-amber-400"
+                  : "text-white/80"
         }`}
       >
         {gapText}
+        {!d.retired && !leader && gapText !== "PIT" && <TrendArrow trend={trend} />}
       </span>
       <span className={`text-right font-mono text-[12px] tabular-nums ${personalBestLap ? "text-sector-green" : "text-white/80"}`}>
         {fmtLap(d.lastLap)}
@@ -76,6 +109,7 @@ export function TimingTower() {
   const drivers = useSnap((s) => s.drivers);
   const lap = useSnap((s) => s.lap);
   const [showGap, setShowGap] = useState(false);
+  const trends = useDashboard((s) => s.insights?.trends);
 
   return (
     <Panel
@@ -112,7 +146,7 @@ export function TimingTower() {
         {order.length === 0 && <div className="p-6 text-center text-sm text-white/40">Waiting for timing data… {MISSING}</div>}
         {order.map((n) => {
           const d = drivers[n];
-          return d ? <Row key={n} d={d} showGap={showGap} /> : null;
+          return d ? <Row key={n} d={d} showGap={showGap} trend={trends?.[n]} /> : null;
         })}
       </div>
     </Panel>

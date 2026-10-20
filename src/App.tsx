@@ -10,6 +10,7 @@ import { TrackMap } from "./components/track/TrackMap";
 import { PositionPanel } from "./components/positions/PositionPanel";
 import { DriverHoverCard } from "./components/hover/DriverHoverCard";
 import { RacePicker } from "./components/races/RacePicker";
+import { AlertToasts } from "./components/events/EventFeed";
 
 export default function App() {
   const kind = useDashboard((s) => s.kind);
@@ -67,6 +68,9 @@ export default function App() {
         </main>
         <ErrorBoundary name="Driver card">
           <DriverHoverCard />
+        </ErrorBoundary>
+        <ErrorBoundary name="Alerts">
+          <AlertToasts />
         </ErrorBoundary>
         <ErrorBoundary name="Race picker">
           <RacePicker />

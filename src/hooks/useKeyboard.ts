@@ -19,6 +19,8 @@ export function useKeyboardShortcuts(): void {
         s.setView(Number(e.key) - 1);
       } else if (e.key === "f" || e.key === "F") {
         toggleFullscreen();
+      } else if (e.key === "Escape") {
+        s.toggleSelected(null);
       } else if (e.key === "m" || e.key === "M") {
         s.toggleTrackExpanded();
       }
