@@ -1,0 +1,74 @@
+name: Race library and site
+
+# Builds any new races into the race library, then publishes the dashboard
+# (Replay mode on the bundled races) to GitHub Pages.
+on:
+  push:
+    branches: [main]
+  schedule:
+    # Monday and Tuesday mornings, after a race weekend's data has been published.
+    - cron: "17 6 * * 1,2"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+
+      # The library is ~5 MB per race and slow to download, so keep it between runs
+      # and only build races that are new.
+      - name: Restore race library
+        uses: actions/cache/restore@v4
+        with:
+          path: public/races
+          key: race-library-v1-${{ github.run_id }}
+          restore-keys: race-library-v1-
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install numpy pyyaml
+      - name: Build new races
+        run: python scripts/build_race_library.py --skip-existing --out public/races
+
+      - name: Save race library
+        uses: actions/cache/save@v4
+        with:
+          path: public/races
+          key: race-library-v1-${{ github.run_id }}
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: Build the site
+        run: npx vite build --base=./
+        env:
+          VITE_STATIC_SITE: "1"
+          VITE_REPLAY_BACKEND: library
+
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: dist
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4

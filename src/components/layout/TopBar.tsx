@@ -32,7 +32,7 @@ function RaceTitle() {
     .filter(Boolean)
     .join(" · ");
   return (
-    <div className="hidden min-w-0 flex-col leading-tight sm:flex" title={session.officialName ?? undefined}>
+    <div className="flex min-w-0 flex-1 flex-col leading-tight sm:flex-initial" title={session.officialName ?? undefined}>
       <span className="flex items-baseline gap-2 truncate">
         {session.round != null && <span className="font-mono text-[10px] font-bold text-cyan-glow">R{session.round}</span>}
         <span className="truncate text-[14px] font-bold text-white">{session.name}</span>
@@ -97,18 +97,18 @@ export function TopBar() {
 
   return (
     <div className="relative z-20 shrink-0 border-b border-white/[0.06] bg-ink-950/80 backdrop-blur">
-      <header className="flex h-14 items-center gap-4 px-4">
+      <header className="flex min-h-14 flex-wrap items-center gap-x-4 gap-y-2 px-3 py-2 sm:flex-nowrap sm:px-4 sm:py-0">
         <div className="flex shrink-0 items-center gap-1.5 text-lg font-black italic tracking-tight">
           <span className="text-white">F1</span>
           <span className="text-cyan-glow drop-shadow-[0_0_8px_#22e5ff]">//</span>
           <span className="text-white/70">PITWALL</span>
         </div>
-        <div className="flex min-w-0 flex-1 items-center gap-3">
+        <div className="order-last flex w-full min-w-0 items-center gap-3 sm:order-none sm:w-auto sm:flex-1">
           <RaceTitle />
           {mode === "replay" && <ChangeRaceButton />}
           <PageSwitch />
         </div>
-        <div className="flex shrink-0 items-center gap-3">
+        <div className="ml-auto flex shrink-0 items-center gap-2 sm:ml-0 sm:gap-3">
           {(loading || error) && (
             <span className={`hidden max-w-[260px] truncate text-[11px] lg:inline ${error ? "text-amber-300/90" : "text-white/50"}`} title={error ?? loading ?? ""}>
               {error ?? loading}
@@ -119,7 +119,7 @@ export function TopBar() {
           <ModeSwitch />
           <button
             onClick={toggleFullscreen}
-            className="grid h-7 w-7 place-items-center rounded-md border border-white/10 text-white/60 hover:border-cyan-glow/50 hover:text-cyan-glow"
+            className="hidden h-7 w-7 place-items-center rounded-md border border-white/10 text-white/60 sm:grid hover:border-cyan-glow/50 hover:text-cyan-glow"
             title="Fullscreen (F)"
             aria-label="Toggle fullscreen"
           >
@@ -130,7 +130,7 @@ export function TopBar() {
         </div>
       </header>
       {/* Playback gets a full-width row of its own so the scrub bar is never squeezed. */}
-      <div className="flex h-11 items-center gap-4 border-t border-white/[0.04] px-4">
+      <div className="flex min-h-11 items-center gap-4 border-t border-white/[0.04] px-3 py-1.5 sm:px-4 sm:py-0">
         {mode === "replay" ? <ReplayControls /> : <span className="flex-1 text-[11px] uppercase tracking-wider text-white/35">Live timing</span>}
         <Weather />
       </div>

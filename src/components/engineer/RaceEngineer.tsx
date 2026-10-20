@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
-import { STATIC_SITE } from "../../data/config";
+/** On a page hosted inside Claude, direct API calls are blocked, so no API-key option is offered there. */
+const API_KEY_ALLOWED = import.meta.env.VITE_ENGINEER !== "page";
 import { askClaude, EngineerError, pageSample, saveKey, savedKey, type Transport } from "../../engineer/claude";
 import { buildRaceContext, ENGINEER_INSTRUCTIONS } from "../../insights/context";
 import { useDashboard } from "../../state/store";
@@ -40,7 +41,7 @@ export function RaceEngineer() {
     void pageSample().then((sample) => {
       if (cancelled) return;
       // On the hosted page, ask through the viewer's own Claude account; locally, use an API key.
-      setTransport(sample ? "page" : STATIC_SITE ? null : "api");
+      setTransport(sample ? "page" : API_KEY_ALLOWED ? "api" : null);
     });
     return () => {
       cancelled = true;

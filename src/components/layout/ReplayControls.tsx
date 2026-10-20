@@ -17,6 +17,7 @@ export function ChangeRaceButton() {
       onClick={() => openPicker(true)}
       className="flex h-7 shrink-0 items-center gap-2 rounded-md border border-cyan-glow/40 bg-cyan-glow/[0.06] px-2.5 text-[11px] font-semibold text-cyan-glow hover:bg-cyan-glow/15"
       title="Choose another race"
+      aria-label={hasSession ? "Change race" : "Choose race"}
     >
       <svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="1.5" aria-hidden="true">
         <rect x="1" y="1" width="4" height="4" rx="1" />
@@ -24,7 +25,7 @@ export function ChangeRaceButton() {
         <rect x="1" y="7" width="4" height="4" rx="1" />
         <rect x="7" y="7" width="4" height="4" rx="1" />
       </svg>
-      {hasSession ? "Change race" : "Choose race"}
+      <span className="hidden sm:inline">{hasSession ? "Change race" : "Choose race"}</span>
     </button>
   );
 }
@@ -43,7 +44,7 @@ export function ReplayControls() {
   const pct = span > 0 ? (position / span) * 100 : 0;
 
   return (
-    <div className="flex min-w-0 flex-1 items-center gap-3">
+    <div className="flex min-w-0 flex-1 flex-wrap items-center gap-x-3 gap-y-1.5 sm:flex-nowrap">
       <button
         disabled={disabled}
         onClick={() => (playback?.playing ? replay.pause() : replay.play())}
@@ -74,7 +75,7 @@ export function ReplayControls() {
       <input
         id="replay-scrub"
         type="range"
-        className="range range-scrub min-w-[120px] flex-1"
+        className="range range-scrub order-last min-w-[120px] basis-full sm:order-none sm:basis-auto sm:flex-1"
         style={{ background: `linear-gradient(90deg, #22e5ff ${pct}%, rgba(255,255,255,0.1) ${pct}%)` }}
         min={0}
         max={Math.max(1, span)}

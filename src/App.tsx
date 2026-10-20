@@ -51,7 +51,7 @@ export default function App() {
           /* The map takes most of the right side; Expand (or M) gives it the whole column. */
           <div
             className={`grid min-h-0 gap-3 ${
-              trackExpanded ? "grid-rows-[minmax(520px,1fr)]" : "grid-rows-[170px_minmax(480px,1fr)] lg:grid-rows-[150px_1fr]"
+              trackExpanded ? "grid-rows-[minmax(520px,1fr)]" : "grid-rows-[170px_auto] sm:grid-rows-[170px_minmax(480px,1fr)] lg:grid-rows-[150px_1fr]"
             }`}
           >
             {!trackExpanded && (
@@ -59,7 +59,7 @@ export default function App() {
                 <RadioFeed />
               </ErrorBoundary>
             )}
-            <div className={`grid min-h-0 gap-3 ${trackExpanded ? "grid-cols-1" : "grid-cols-[1fr_210px]"}`}>
+            <div className={`grid min-h-0 gap-3 ${trackExpanded ? "grid-cols-1" : "grid-cols-1 grid-rows-[380px_460px] sm:grid-cols-[1fr_210px] sm:grid-rows-1"}`}>
               <ErrorBoundary name="Track map">
                 <TrackMap />
               </ErrorBoundary>

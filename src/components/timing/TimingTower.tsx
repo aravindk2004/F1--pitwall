@@ -1,4 +1,5 @@
 import { memo, useState } from "react";
+import { useDriverHover } from "../../hooks/useDriverHover";
 import { useDashboard, useSnap } from "../../state/store";
 import type { DriverState, SectorStatus } from "../../data/types";
 import type { GapTrend } from "../../insights";
@@ -19,14 +20,16 @@ const SECTOR_BAR: Record<string, string> = {
 
 function SectorCell({ value, status }: { value: number | null; status: SectorStatus }) {
   return (
-    <div className="relative flex flex-col items-end">
+    <div className="relative hidden flex-col items-end sm:flex">
       <span className={`font-mono text-[12px] tabular-nums ${status ? SECTOR_CLASS[status] : "text-white/35"}`}>{fmtSector(value)}</span>
       <span className={`mt-0.5 h-[2px] w-full rounded-full ${status ? SECTOR_BAR[status] : "bg-white/5"}`} />
     </div>
   );
 }
 
-const GRID = "grid grid-cols-[28px_4px_minmax(0,1fr)_76px_74px_52px_52px_52px_30px] items-center gap-x-2";
+const GRID =
+  "grid grid-cols-[24px_4px_minmax(0,1fr)_76px_30px] sm:grid-cols-[28px_4px_minmax(0,1fr)_76px_74px_52px_52px_52px_30px] items-center gap-x-2";
+const WIDE = "hidden sm:block";
 
 /** Arrow showing whether the gap to the car ahead is shrinking or growing. */
 function TrendArrow({ trend }: { trend: GapTrend | undefined }) {
@@ -45,7 +48,7 @@ function TrendArrow({ trend }: { trend: GapTrend | undefined }) {
 }
 
 const Row = memo(function Row({ d, showGap, trend }: { d: DriverState; showGap: boolean; trend: GapTrend | undefined }) {
-  const setHovered = useDashboard((s) => s.setHovered);
+  const hover = useDriverHover();
   const toggleSelected = useDashboard((s) => s.toggleSelected);
   const hovered = useDashboard((s) => s.hovered?.driver === d.number);
   const selected = useDashboard((s) => s.selected === d.number);
@@ -65,9 +68,7 @@ const Row = memo(function Row({ d, showGap, trend }: { d: DriverState; showGap: 
       }`}
       onClick={() => toggleSelected(d.number)}
       title={battle ? "Battle: within 1 s of the car ahead" : "Click to follow this driver"}
-      onMouseEnter={(e) => setHovered({ driver: d.number, x: e.clientX, y: e.clientY })}
-      onMouseMove={(e) => setHovered({ driver: d.number, x: e.clientX, y: e.clientY })}
-      onMouseLeave={() => setHovered(null)}
+      {...hover(d.number)}
     >
       <span className="text-right font-mono text-[13px] font-semibold tabular-nums text-white/90">{d.position ?? MISSING}</span>
       <span className="h-5 w-1 rounded-full" style={{ background: d.teamColor, boxShadow: `0 0 8px ${d.teamColor}66` }} />
@@ -91,7 +92,7 @@ const Row = memo(function Row({ d, showGap, trend }: { d: DriverState; showGap: 
         {gapText}
         {!d.retired && !leader && gapText !== "PIT" && <TrendArrow trend={trend} />}
       </span>
-      <span className={`text-right font-mono text-[12px] tabular-nums ${personalBestLap ? "text-sector-green" : "text-white/80"}`}>
+      <span className={`${WIDE} text-right font-mono text-[12px] tabular-nums ${personalBestLap ? "text-sector-green" : "text-white/80"}`}>
         {fmtLap(d.lastLap)}
       </span>
       {[0, 1, 2].map((j) => (
@@ -136,10 +137,10 @@ export function TimingTower() {
         <span />
         <span>Driver</span>
         <span className="text-right">{showGap ? "Gap" : "Int"}</span>
-        <span className="text-right">Last</span>
-        <span className="text-right">S1</span>
-        <span className="text-right">S2</span>
-        <span className="text-right">S3</span>
+        <span className={`${WIDE} text-right`}>Last</span>
+        <span className={`${WIDE} text-right`}>S1</span>
+        <span className={`${WIDE} text-right`}>S2</span>
+        <span className={`${WIDE} text-right`}>S3</span>
         <span className="text-right">Tyre</span>
       </div>
       <div className="flex flex-col gap-[2px] p-1">

@@ -5,4 +5,6 @@ interface ImportMetaEnv {
   readonly VITE_STATIC_SITE?: string;
   /** Default replay backend: "openf1" or "library". */
   readonly VITE_REPLAY_BACKEND?: string;
+  /** "page" when the build runs inside Claude, where the race engineer uses the viewer's account only. */
+  readonly VITE_ENGINEER?: string;
 }

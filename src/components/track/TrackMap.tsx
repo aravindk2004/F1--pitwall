@@ -1,4 +1,5 @@
 import { memo, useEffect, useMemo, useRef, useState } from "react";
+import { useDriverHover } from "../../hooks/useDriverHover";
 import { useDashboard, useSnap } from "../../state/store";
 import type { Point, TrackLayout } from "../../data/types";
 import { Panel } from "../common/Panel";
@@ -100,7 +101,7 @@ function DriverDots({ proj }: { proj: Projection }) {
   const drivers = useSnap((s) => s.drivers);
   const hovered = useDashboard((s) => s.hovered?.driver ?? null);
   const selected = useDashboard((s) => s.selected);
-  const setHovered = useDashboard((s) => s.setHovered);
+  const hover = useDriverHover();
   const toggleSelected = useDashboard((s) => s.toggleSelected);
   const entries = Object.entries(locations)
     .map(([n, p]) => ({ n: Number(n), p: proj.project(p) }))
@@ -118,9 +119,7 @@ function DriverDots({ proj }: { proj: Projection }) {
             key={n}
             transform={`translate(${p.x.toFixed(1)} ${p.y.toFixed(1)})`}
             className="cursor-pointer"
-            onMouseEnter={(e) => setHovered({ driver: n, x: e.clientX, y: e.clientY })}
-            onMouseMove={(e) => setHovered({ driver: n, x: e.clientX, y: e.clientY })}
-            onMouseLeave={() => setHovered(null)}
+            {...hover(n)}
             onClick={() => toggleSelected(n)}
           >
             <circle r={isHover ? 22 : 16} fill={color} opacity="0.18" />

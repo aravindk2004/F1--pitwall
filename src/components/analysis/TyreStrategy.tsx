@@ -1,6 +1,7 @@
 import { useMemo } from "react";
 import type { DriverState, LapRecord } from "../../data/types";
-import { useDashboard, useSnap } from "../../state/store";
+import { useDriverHover } from "../../hooks/useDriverHover";
+import { useSnap } from "../../state/store";
 import { MISSING } from "../../lib/format";
 import { Panel } from "../common/Panel";
 import { TyreIcon } from "../common/TyreIcon";
@@ -45,7 +46,7 @@ export function TyreStrategy() {
   const history = useSnap((s) => s.history);
   const total = useSnap((s) => s.lap.total);
   const current = useSnap((s) => s.lap.current);
-  const setHovered = useDashboard((s) => s.setHovered);
+  const hover = useDriverHover();
   const rows = useMemo(
     () => order.filter((n) => drivers[n]).map((n) => ({ d: drivers[n], stints: stintsOf(history[n] ?? [], drivers[n]) })),
     [order, drivers, history],
@@ -62,8 +63,7 @@ export function TyreStrategy() {
             key={d.number}
             className={`flex items-center ${d.retired ? "opacity-40" : ""}`}
             style={{ height: ROW }}
-            onMouseEnter={(e) => setHovered({ driver: d.number, x: e.clientX, y: e.clientY })}
-            onMouseLeave={() => setHovered(null)}
+            {...hover(d.number)}
           >
             <span className="flex shrink-0 items-center gap-1.5 text-[11px] font-bold text-white/85" style={{ width: LABEL_W }}>
               <span className="h-3 w-1 rounded-full" style={{ background: d.teamColor }} />

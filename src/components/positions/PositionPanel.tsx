@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { STAT_VIEWS, useDashboard, useSnap } from "../../state/store";
+import { useDriverHover } from "../../hooks/useDriverHover";
 import type { CarTelemetry, DriverState } from "../../data/types";
 import { fmtGap, fmtLap, isLeaderGap, MISSING } from "../../lib/format";
 import { Panel } from "../common/Panel";
@@ -32,7 +33,8 @@ export function PositionPanel() {
   const car = useDashboard((s) => (s.view === 2 ? s.snapshot.car : null));
   const cycleSeconds = useDashboard((s) => s.cycleSeconds);
   const paused = useDashboard((s) => s.cyclePaused);
-  const { nextView, setView, setCycleSeconds, toggleCyclePaused, setHovered } = useDashboard.getState();
+  const { nextView, setView, setCycleSeconds, toggleCyclePaused } = useDashboard.getState();
+  const hover = useDriverHover();
   const [elapsed, setElapsed] = useState(0);
   const elapsedRef = useRef(0);
 
@@ -108,9 +110,7 @@ export function PositionPanel() {
             <li
               key={n}
               className={`flex h-[26px] items-center gap-2 rounded px-2 hover:bg-white/[0.04] ${d.retired ? "opacity-35 grayscale" : ""}`}
-              onMouseEnter={(e) => setHovered({ driver: n, x: e.clientX, y: e.clientY })}
-              onMouseMove={(e) => setHovered({ driver: n, x: e.clientX, y: e.clientY })}
-              onMouseLeave={() => setHovered(null)}
+              {...hover(n)}
             >
               <span className="w-5 text-right font-mono text-[12px] text-white/70">{d.position ?? MISSING}</span>
               <span className="h-4 w-1 rounded-full" style={{ background: d.teamColor }} />

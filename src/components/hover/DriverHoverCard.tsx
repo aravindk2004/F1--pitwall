@@ -6,6 +6,7 @@ import { Speedometer } from "./Speedometer";
 const CARD_W = 300;
 const CARD_H = 470;
 const MAX_RPM = 13000;
+const TOUCH = typeof window !== "undefined" && window.matchMedia?.("(hover: none)").matches;
 
 function DrsPill({ drs }: { drs: number | null }) {
   const state = drs == null ? "unknown" : drs >= 10 ? "open" : drs === 8 ? "eligible" : "off";
@@ -34,22 +35,32 @@ function VBar({ label, value, color }: { label: string; value: number | null; co
 /** Floating telemetry card for whichever driver is under the pointer. */
 export function DriverHoverCard() {
   const hovered = useDashboard((s) => s.hovered);
-  const d = useDashboard((s) => (s.hovered ? s.snapshot.drivers[s.hovered.driver] : undefined));
-  const car = useDashboard((s) => (s.hovered ? s.snapshot.car[s.hovered.driver] : undefined));
-  const pace = useDashboard((s) => (s.hovered ? s.insights?.pace[s.hovered.driver] : undefined));
-  const pit = useDashboard((s) => (s.hovered ? s.insights?.pit[s.hovered.driver] : undefined));
-  const trend = useDashboard((s) => (s.hovered ? s.insights?.trends[s.hovered.driver] : undefined));
+  // Touch screens can't hover, so the driver you tap is shown in a card docked at the bottom.
+  const docked = useDashboard((s) => (!s.hovered && TOUCH && s.selected != null ? s.selected : null));
+  const driver = hovered?.driver ?? docked;
+  const d = useDashboard((s) => (driver != null ? s.snapshot.drivers[driver] : undefined));
+  const car = useDashboard((s) => (driver != null ? s.snapshot.car[driver] : undefined));
+  const pace = useDashboard((s) => (driver != null ? s.insights?.pace[driver] : undefined));
+  const pit = useDashboard((s) => (driver != null ? s.insights?.pit[driver] : undefined));
+  const trend = useDashboard((s) => (driver != null ? s.insights?.trends[driver] : undefined));
+  const toggleSelected = useDashboard((s) => s.toggleSelected);
   const allDrivers = useDashboard((s) => s.snapshot.drivers);
   const codeOf = (n: number | null | undefined) => (n != null ? (allDrivers[n]?.code ?? String(n)) : MISSING);
-  if (!hovered) return null;
+  if (driver == null) return null;
 
   const vw = typeof window !== "undefined" ? window.innerWidth : 1600;
   const vh = typeof window !== "undefined" ? window.innerHeight : 900;
-  let left = hovered.x + 18;
-  if (left + CARD_W > vw - 8) left = hovered.x - CARD_W - 18;
-  // Keep the card below the top bar (title row + playback row).
-  const minTop = 108;
-  const top = Math.max(minTop, Math.min(hovered.y - CARD_H / 2, vh - CARD_H - 8));
+  let style: React.CSSProperties;
+  if (hovered) {
+    let left = hovered.x + 18;
+    if (left + CARD_W > vw - 8) left = hovered.x - CARD_W - 18;
+    // Keep the card below the top bar (title row + playback row).
+    const minTop = 108;
+    const top = Math.max(minTop, Math.min(hovered.y - CARD_H / 2, vh - CARD_H - 8));
+    style = { left, top, width: CARD_W };
+  } else {
+    style = { left: "50%", bottom: 8, width: Math.min(CARD_W, vw - 16), transform: "translateX(-50%)", maxHeight: "70vh", overflowY: "auto" };
+  }
   const color = d?.teamColor ?? "#8a8a96";
   const rpm = car?.rpm ?? null;
   const rpmPct = rpm != null ? Math.min(100, (rpm / MAX_RPM) * 100) : 0;
@@ -57,21 +68,27 @@ export function DriverHoverCard() {
 
   return (
     <div
-      className="pointer-events-none fixed z-50 overflow-hidden rounded-2xl border border-white/10 bg-ink-900/95 shadow-[0_30px_60px_-20px_rgba(0,0,0,0.9),0_0_0_1px_rgba(34,229,255,0.08)] backdrop-blur-xl"
-      style={{ left, top, width: CARD_W }}
-      role="tooltip"
+      className={`${hovered ? "pointer-events-none" : ""} fixed z-50 overflow-hidden rounded-2xl border border-white/10 bg-ink-900/95 shadow-[0_30px_60px_-20px_rgba(0,0,0,0.9),0_0_0_1px_rgba(34,229,255,0.08)] backdrop-blur-xl`}
+      style={style}
+      role={hovered ? "tooltip" : "dialog"}
+      aria-label={hovered ? undefined : `${d?.code ?? driver} details`}
     >
       <div className="h-1" style={{ background: `linear-gradient(90deg, ${color}, transparent)` }} />
       <div className="flex items-center gap-3 px-4 pt-3">
         <span className="font-mono text-2xl font-extrabold text-white">{d?.position ?? MISSING}</span>
         <div className="min-w-0 flex-1">
           <div className="flex items-baseline gap-2">
-            <span className="text-lg font-extrabold tracking-wide text-white">{d?.code ?? hovered.driver}</span>
-            <span className="font-mono text-xs text-white/40">#{hovered.driver}</span>
+            <span className="text-lg font-extrabold tracking-wide text-white">{d?.code ?? driver}</span>
+            <span className="font-mono text-xs text-white/40">#{driver}</span>
           </div>
           <div className="truncate text-[11px] text-white/45">{d ? `${d.name} · ${d.team}` : MISSING}</div>
         </div>
         <DrsPill drs={car?.drs ?? null} />
+        {!hovered && (
+          <button onClick={() => toggleSelected(driver)} className="-mr-1 grid h-7 w-7 place-items-center rounded-md text-white/50 hover:text-white" aria-label="Close">
+            ✕
+          </button>
+        )}
       </div>
 
       <div className="flex items-end gap-2 px-3">
