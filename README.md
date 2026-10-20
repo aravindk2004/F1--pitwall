@@ -8,6 +8,11 @@ React + Vite + TypeScript + Tailwind + Zustand. The track map and the gauges are
 - **Hover card** (hover any driver in the tower, map or positions panel): 0–360 km/h arc speedometer with needle, DRS pill, throttle and brake bars, gear, RPM, tyre compound and age, and gap to the leader.
 - **Positions panel**: cycles through Gap → Tyre age → Speed → Last lap → Pit stops. A slider sets the interval (3–20 s, saved between visits), and there is a pause button.
 - **Top bar**: session and lap, weather, per-topic feed health dots, the **LIVE / STALE / REPLAY / OFFLINE** badge, the **Live / Replay / Mock** switch, replay transport controls, and fullscreen.
+- **Race insights**: arrows in the tower show whether each gap is closing or growing; cars within 1 s of the car ahead are marked as a battle. The hover card adds tyre wear per lap, where the car would rejoin if it pitted now, and when it will catch the car ahead. A ghost dot on the map shows the pit rejoin spot.
+- **Events and alerts**: the **Events** tab next to Team radio lists overtakes, pit stops, fastest laps, retirements, flags and penalties as they happen. Optional sound and browser notifications.
+- **Analysis view** (`A`): lap-time, gap and position charts, tyre strategy, a strategy table (pace, wear, pit window), a lap-by-lap telemetry compare for two drivers, and the championship as it stands. Click any driver to follow them across the dashboard.
+- **Race engineer**: ask Claude about the race in plain English. It sees the timing, gaps, tyres, pit projections and recent events at the current moment, and in replays it won't reveal what happens later.
+- **Phone layout**: the header and tower adapt to narrow screens; tap a driver for their card.
 - Missing values show `--`. Each panel sits in its own error boundary, so one bad message can't blank the dashboard.
 
 ## Quick start (no network needed)
@@ -98,6 +103,54 @@ VITE_STATIC_SITE=1 VITE_REPLAY_BACKEND=library npx vite build --base=./
 
 This build hides Live mode and the OpenF1 option, since a hosted page can't reach the bridge or external APIs. It opens on the race picker. Copy `public/races` alongside the build output.
 
+### GitHub Pages (updates itself after each race)
+
+`.github/workflows/pages.yml` builds any new races into the library on Monday and Tuesday mornings (and on every push to `main`), then publishes the static build to GitHub Pages. To turn it on: **Settings → Pages → Source: GitHub Actions**.
+
+- Pages on a **private** repository needs a paid GitHub plan.
+- A Pages site is public. It would serve the bundled timing data and team-radio clips to anyone, so check you're comfortable with that before enabling it.
+
+## Race insights
+
+All insights are computed in the browser from the lap history (`src/insights/`), so they work the same in Live, Replay and Mock.
+
+| Insight | How it's worked out |
+| --- | --- |
+| Tyre wear | Slope of clean-lap times across the stint, corrected for fuel burn (0.035 s/lap). Laps behind a safety car, in/out laps and outliers are left out. Needs 5 clean laps. A "cliff" is flagged when the last laps are well off the stint's trend. |
+| Pit rejoin | The car's gap to the leader plus the pit loss, placed among the other cars. Pit loss is measured from this race's stops when there are enough of them, otherwise 22 s. Flags traffic (rejoining within 1.5 s of a car) and pressure (a car within 1 s behind). |
+| Gap trends | Change in the gap to the car ahead over the last few laps, and how many laps until it's closed (capped at 20). |
+| Championship | Points before the race (Jolpica) plus points for the current top 10. |
+
+## Race engineer (Claude)
+
+Open **Analysis** and scroll to **Race engineer**. Pick a quick question or type your own.
+
+- Running locally, paste an Anthropic API key. It's stored only in this browser (if you tick *Remember*) and is sent only to the Anthropic API. Each question is billed to that key: one request carrying a summary of the race so far, so later in the race costs a little more.
+- On the page published through Claude, it uses the viewer's own Claude account instead, and no key is needed.
+- Model: `claude-opus-5-5`, streamed, with server-side fallback enabled so a busy model doesn't fail the question.
+
+## Following a race live
+
+The dashboard can't call F1's feed directly from the browser, so a small Python bridge sits in between. Options for the data, from free to paid:
+
+| Source | Cost | Notes |
+| --- | --- | --- |
+| F1 live timing via FastF1 (`--source fastf1`, default) | F1TV subscription | The same feed the official app uses: timing, positions, car data, radio. `--no-auth` may give partial data with no subscription. |
+| OpenF1 real-time (`--source openf1`) | Paid OpenF1 account | Polled every 3 s. OpenF1 says location, car data and intervals may be missing in real time. Historical data stays free. |
+| Jolpica (Ergast successor) | Free | Results and standings only, after the race. Used here for the championship. |
+
+There is no free, official, complete live API. FastF1 with F1TV is the most complete option.
+
+### Running the bridge on a server
+
+To watch from a phone or share with friends, run the bridge on a small server (any VPS) and put it behind HTTPS:
+
+```bash
+BRIDGE_TOKEN=pick-a-long-secret python bridge.py --host 127.0.0.1 --port 8765
+```
+
+Put a reverse proxy (Caddy or nginx) in front of it for `wss://`; a page served over HTTPS can't connect to a plain `ws://` address. Then open the dashboard with `?source=live&bridge=wss://your.server/ws?token=pick-a-long-secret`.
+
 ## Keyboard
 
 | Key | Action |
@@ -106,6 +159,8 @@ This build hides Live mode and the OpenF1 option, since a hosted page can't reac
 | `1`–`5` | Gap, tyre age, speed, last lap, pit stops |
 | `F` | Toggle fullscreen |
 | `M` | Enlarge the track map over the radio and positions panels (or use **Expand** on the map) |
+| `A` | Switch between Dashboard and Analysis |
+| `Esc` | Stop following the selected driver |
 
 ## Architecture
 
@@ -157,11 +212,14 @@ interface F1DataSource {
 
 `App.tsx` creates the source through `createDataSource(kind)` and pushes each snapshot into the Zustand store. Components read the store with selectors. They import types from `data/types` and the context hook from `data/context`, never a provider module. High-frequency fields (`locations`, `car`) are kept separate from the slower timing data, so the timing tower doesn't re-render on every animation frame.
 
+CI (`.github/workflows/ci.yml`) runs the tests, the type check, the build and the bridge tests on every push and pull request.
+
 ## Scripts
 
 ```bash
 npm run dev        # dev server
 npm run build      # type-check + production build to dist/
 npm run preview    # serve the build
-cd bridge && python -m unittest test_translator.py
+npm test           # insight engine tests (vitest)
+cd bridge && python -m unittest test_translator.py test_openf1_live.py
 ```

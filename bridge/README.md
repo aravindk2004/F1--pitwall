@@ -70,7 +70,34 @@ python bridge.py --replay-file sample_feed.txt --speed 4 --loop
 | `--timeout N` | `0` | Stop the feed client after N s without data (0 = never) |
 | `--replay-file FILE` | – | Replay a recorded raw feed instead of connecting live |
 | `--speed X` / `--loop` | `1` / off | Replay speed / restart the replay when it ends |
+| `--source` | `fastf1` | `fastf1` (F1 live timing) or `openf1` (OpenF1 real-time API, paid account) |
+| `--openf1-user` / `--openf1-pass` | env `OPENF1_USERNAME` / `OPENF1_PASSWORD` | OpenF1 login, for `--source openf1` |
+| `--token TOKEN` | env `BRIDGE_TOKEN` | Clients must connect with `?token=TOKEN`; others are closed with code 4401 |
 | `-v` | off | Debug logging |
+
+## OpenF1 instead of F1TV
+
+```bash
+OPENF1_USERNAME=you@example.com OPENF1_PASSWORD=… python bridge.py --source openf1
+```
+
+The bridge logs in at `https://api.openf1.org/token`, follows the latest session and polls every 3 seconds, forwarding new records unchanged (the dashboard already uses OpenF1's format). Real-time access needs a paid OpenF1 account. OpenF1 notes that car data, location and intervals may not be available live; missing feeds show `--`.
+
+## Running on a server
+
+Bind to localhost, set a token, and put a reverse proxy in front for `wss://`. Example Caddyfile:
+
+```
+bridge.example.com {
+    reverse_proxy /ws* 127.0.0.1:8765
+}
+```
+
+```bash
+BRIDGE_TOKEN=pick-a-long-secret python bridge.py --host 127.0.0.1
+```
+
+Open the dashboard with `?source=live&bridge=wss://bridge.example.com/ws?token=pick-a-long-secret`.
 
 ## Topics
 
@@ -101,5 +128,5 @@ The API was checked against the installed package (FastF1 3.8.3), not assumed:
 ## Tests
 
 ```bash
-python -m unittest test_translator.py
+python -m unittest test_translator.py test_openf1_live.py
 ```
