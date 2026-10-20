@@ -55,6 +55,28 @@ export function toggleFullscreen(): void {
   }
 }
 
+/** Dashboard (live view) or Analysis (charts, strategy, race engineer). Key: A. */
+function PageSwitch() {
+  const page = useDashboard((s) => s.page);
+  const setPage = useDashboard((s) => s.setPage);
+  return (
+    <div className="flex h-7 shrink-0 rounded-md border border-white/10 p-0.5" role="tablist" aria-label="View">
+      {(["dashboard", "analysis"] as const).map((p) => (
+        <button
+          key={p}
+          role="tab"
+          aria-selected={page === p}
+          onClick={() => setPage(p)}
+          title={p === "analysis" ? "Charts, strategy and the race engineer (A)" : "Live dashboard (A)"}
+          className={`rounded px-2.5 text-[11px] font-semibold capitalize ${page === p ? "bg-white/10 text-white" : "text-white/45 hover:text-white"}`}
+        >
+          {p}
+        </button>
+      ))}
+    </div>
+  );
+}
+
 function Weather() {
   const weather = useSnap((s) => s.weather);
   return (
@@ -84,6 +106,7 @@ export function TopBar() {
         <div className="flex min-w-0 flex-1 items-center gap-3">
           <RaceTitle />
           {mode === "replay" && <ChangeRaceButton />}
+          <PageSwitch />
         </div>
         <div className="flex shrink-0 items-center gap-3">
           {(loading || error) && (

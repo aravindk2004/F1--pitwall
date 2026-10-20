@@ -11,10 +11,12 @@ import { PositionPanel } from "./components/positions/PositionPanel";
 import { DriverHoverCard } from "./components/hover/DriverHoverCard";
 import { RacePicker } from "./components/races/RacePicker";
 import { AlertToasts } from "./components/events/EventFeed";
+import { AnalysisView } from "./components/analysis/AnalysisView";
 
 export default function App() {
   const kind = useDashboard((s) => s.kind);
   const trackExpanded = useDashboard((s) => s.trackExpanded);
+  const page = useDashboard((s) => s.page);
   const backend = useDashboard((s) => s.replayBackend);
   const source = useMemo(() => createDataSource(kind, backend), [kind, backend]);
   useKeyboardShortcuts();
@@ -43,7 +45,10 @@ export default function App() {
               <TimingTower />
             </ErrorBoundary>
           </div>
-          {/* The map takes most of the right side; Expand (or M) gives it the whole column. */}
+          {page === "analysis" ? (
+            <AnalysisView />
+          ) : (
+          /* The map takes most of the right side; Expand (or M) gives it the whole column. */
           <div
             className={`grid min-h-0 gap-3 ${
               trackExpanded ? "grid-rows-[minmax(520px,1fr)]" : "grid-rows-[170px_minmax(480px,1fr)] lg:grid-rows-[150px_1fr]"
@@ -65,6 +70,7 @@ export default function App() {
               )}
             </div>
           </div>
+          )}
         </main>
         <ErrorBoundary name="Driver card">
           <DriverHoverCard />
