@@ -1,6 +1,6 @@
 import { ReplayRuntime } from "./replayRuntime";
 import type { CarSample, LocSample, TelemetryChunk, TelemetryProvider } from "./timeline";
-import type { Point, SessionInfo, SessionOption, TrackLayout } from "./types";
+import type { Point, SessionInfo, SessionOption, Standings, TrackLayout } from "./types";
 import { lastIndexAtOrBefore, parseDate, type RawDriver, type RawDriverStatus, type RawLap, type RawPit, type RawRaceControl, type RawRadio, type RawStint, type RawWeather } from "./records";
 
 // Files written by scripts/build_race_library.py.
@@ -59,6 +59,8 @@ interface LibraryRace extends LibrarySummary {
   weather: RawWeather[];
   radio: RawRadio[];
   track: (TrackLayout & { rel: number[] }) | null;
+  /** Championship points before this race (absent in libraries built before it was added). */
+  standings?: Standings | null;
 }
 
 interface PackedCar {
@@ -329,7 +331,10 @@ export class LibraryReplaySource extends ReplayRuntime {
         radio: race.radio.map((r) => ({ ...r, recording_url: this.radioUrl(summary.dir, r.recording_url) })),
         raceControl: race.raceControl,
         weather: race.weather,
-        track: race.track ? { points: race.track.points, drsZones: race.track.drsZones, corners: race.track.corners } : null,
+        track: race.track
+          ? { points: race.track.points, rel: race.track.rel, drsZones: race.track.drsZones, corners: race.track.corners }
+          : null,
+        standings: race.standings ?? null,
         telemetry: provider,
       });
     } catch (err) {

@@ -513,6 +513,22 @@ function telemetryChunk(race: MockRace, from: number, to: number): TelemetryChun
   return { location, car };
 }
 
+/** Made-up points so the championship view has something to show offline. */
+function mockStandings() {
+  const rand = rng(404);
+  const drivers = MOCK_DRIVERS.map((d, i) => ({
+    number: d.driver_number,
+    points: Math.max(0, Math.round(240 - i * 12 + (rand() - 0.5) * 30)),
+  })).sort((a, b) => b.points - a.points);
+  const byTeam = new Map<string, number>();
+  for (const d of MOCK_DRIVERS) {
+    const pts = drivers.find((x) => x.number === d.driver_number)!.points;
+    byTeam.set(d.team_name!, (byTeam.get(d.team_name!) ?? 0) + pts);
+  }
+  const constructors = [...byTeam].map(([team, points]) => ({ team, points })).sort((a, b) => b.points - a.points);
+  return { drivers, constructors };
+}
+
 let cached: { race: MockRace; records: ReturnType<typeof buildRecords> } | null = null;
 
 export function createMockDataset(): TimelineDataset {
@@ -550,6 +566,7 @@ export function createMockDataset(): TimelineDataset {
     raceControl: buildRaceControl(race),
     weather: buildWeather(race),
     track: trackLayout(race),
+    standings: mockStandings(),
     telemetry: {
       chunkMs: 60_000,
       loadChunk: (from, to) => new Promise((resolve) => setTimeout(() => resolve(telemetryChunk(race, from, to)), 0)),

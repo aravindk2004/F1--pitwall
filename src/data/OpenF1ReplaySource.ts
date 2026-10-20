@@ -1,6 +1,7 @@
 import { openf1 } from "./openf1Api";
 import { ReplayRuntime } from "./replayRuntime";
 import { buildTrack } from "./track";
+import { standingsBefore } from "./standings";
 import type { CarSample, LocSample, TelemetryChunk, TelemetryProvider } from "./timeline";
 import type { SessionInfo, SessionOption, TrackLayout } from "./types";
 import {
@@ -193,6 +194,9 @@ export class OpenF1ReplaySource extends ReplayRuntime {
       const start = lapStarts.length ? Math.max(sessionStart, Math.min(...lapStarts) - 30_000) : sessionStart;
       const end = lapEnds.length ? Math.min(sessionEnd + 600_000, Math.max(...lapEnds) + 60_000) : sessionEnd;
 
+      const standings = session.year
+        ? await standingsBefore(session.year, new Date(sessionStart).toISOString().slice(0, 10))
+        : null;
       this.update({ loading: "Drawing track…" });
       const track = await this.loadTrack(key, laps, signal).catch(() => null);
       if (signal.aborted) return;
@@ -236,6 +240,7 @@ export class OpenF1ReplaySource extends ReplayRuntime {
         weather,
         track,
         telemetry,
+        standings,
       });
     } catch (err) {
       if (signal.aborted) return;

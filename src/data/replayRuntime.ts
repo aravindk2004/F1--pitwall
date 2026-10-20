@@ -11,6 +11,8 @@ import {
   type SourceStatus,
 } from "./types";
 import { Timeline, type HeavyState, type TimelineDataset } from "./timeline";
+import { trackGeometry, type TrackGeometry } from "./track";
+import type { LapTrace, Point } from "./types";
 
 const HEAVY_INTERVAL_MS = 200;
 
@@ -27,6 +29,7 @@ export abstract class ReplayRuntime implements F1DataSource, ReplayControls {
   readonly replay: ReplayControls = this;
 
   protected timeline: Timeline | null = null;
+  private geometry: TrackGeometry | null = null;
   private snapshot: F1Snapshot = emptySnapshot();
   private listeners = new Set<Listener>();
   private playing = false;
@@ -92,6 +95,20 @@ export abstract class ReplayRuntime implements F1DataSource, ReplayControls {
     this.needsTelemetry = true;
   }
 
+  pastLocation(driver: number, secondsAgo: number): Point | null {
+    if (!this.timeline) return null;
+    const t = this.time - secondsAgo * 1000;
+    this.timeline.ensureTelemetry(t);
+    return this.timeline.locationAt(driver, t);
+  }
+
+  async lapTrace(driver: number, lap: number): Promise<LapTrace | null> {
+    const tl = this.timeline;
+    if (!tl) return null;
+    const geo = this.geometry;
+    return tl.lapTrace(driver, lap, (p) => geo?.fractionOf(p) ?? null);
+  }
+
   seek(time: number): void {
     if (!this.timeline) return;
     this.time = Math.min(this.timeline.end, Math.max(this.timeline.start, time));
@@ -103,18 +120,28 @@ export abstract class ReplayRuntime implements F1DataSource, ReplayControls {
     const timeline = new Timeline(ds);
     timeline.setChunkListener(() => (this.needsTelemetry = true));
     this.timeline = timeline;
+    this.geometry = trackGeometry(ds.track);
     this.time = ds.start;
     this.playing = autoplay;
     this.heavy = null;
     this.needsHeavy = true;
     this.needsTelemetry = true;
-    this.update({ session: ds.session, track: ds.track, loading: null, error: null, locations: {}, car: {} });
+    this.update({
+      session: ds.session,
+      track: ds.track,
+      standings: ds.standings ?? null,
+      loading: null,
+      error: null,
+      locations: {},
+      car: {},
+    });
   }
 
   protected clearDataset(): void {
     this.timeline = null;
     this.playing = false;
     this.heavy = null;
+    this.geometry = null;
     this.snapshot = emptySnapshot();
     this.emit();
   }
@@ -163,6 +190,7 @@ export abstract class ReplayRuntime implements F1DataSource, ReplayControls {
       patch.locations = locations;
       patch.car = car;
       patch.playback = { playing: this.playing, speed: this.speed, time: this.time, start: tl.start, end: tl.end };
+      patch.now = this.time;
       patch.loading = tl.isTelemetryLoading(this.time) && Object.keys(locations).length === 0 ? "Loading telemetry…" : null;
       this.needsTelemetry = false;
     }

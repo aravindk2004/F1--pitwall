@@ -66,3 +66,47 @@ export function extent(points: Point[]): { minX: number; minY: number; w: number
   if (!Number.isFinite(minX)) return { minX: 0, minY: 0, w: 1, h: 1 };
   return { minX, minY, w: Math.max(1, maxX - minX), h: Math.max(1, maxY - minY) };
 }
+
+export interface TrackGeometry {
+  /** Fraction of the lap (0–1) at the point of the circuit nearest to `p`. */
+  fractionOf(p: Point): number | null;
+}
+
+/** Lap-distance lookups along a circuit outline. */
+export function trackGeometry(layout: TrackLayout | null): TrackGeometry | null {
+  if (!layout || layout.points.length < 10) return null;
+  const pts = layout.points;
+  let frac: number[];
+  if (layout.rel && layout.rel.length === pts.length) {
+    frac = layout.rel;
+  } else {
+    const cum = [0];
+    for (let i = 1; i < pts.length; i++) cum.push(cum[i - 1] + Math.hypot(pts[i].x - pts[i - 1].x, pts[i].y - pts[i - 1].y));
+    const total = cum[cum.length - 1] + Math.hypot(pts[0].x - pts[pts.length - 1].x, pts[0].y - pts[pts.length - 1].y);
+    frac = cum.map((c) => c / (total || 1));
+  }
+  const box = extent(pts);
+  const maxDist = Math.max(box.w, box.h) * 0.08;
+  return {
+    fractionOf(p) {
+      let best = -1, bestD = Infinity, bestW = 0;
+      for (let i = 0; i < pts.length; i++) {
+        const a = pts[i], b = pts[(i + 1) % pts.length];
+        const dx = b.x - a.x, dy = b.y - a.y;
+        const len2 = dx * dx + dy * dy || 1;
+        const w = Math.min(1, Math.max(0, ((p.x - a.x) * dx + (p.y - a.y) * dy) / len2));
+        const d = Math.hypot(a.x + dx * w - p.x, a.y + dy * w - p.y);
+        if (d < bestD) {
+          bestD = d;
+          best = i;
+          bestW = w;
+        }
+      }
+      if (best < 0 || bestD > maxDist) return null;
+      const f0 = frac[best];
+      let f1 = best + 1 < frac.length ? frac[best + 1] : 1;
+      if (f1 < f0) f1 += 1;
+      return (f0 + (f1 - f0) * bestW) % 1;
+    },
+  };
+}

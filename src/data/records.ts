@@ -32,6 +32,8 @@ export interface RawLap {
   duration_sector_2?: number | null;
   duration_sector_3?: number | null;
   is_pit_out_lap?: boolean | null;
+  /** Bridge only: when the timing update arrived. */
+  date?: string | null;
   /** Bridge only: sector colours as reported by the official feed. */
   sector_flags?: Array<"purple" | "green" | "yellow" | null> | null;
 }

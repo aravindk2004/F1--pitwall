@@ -9,6 +9,8 @@ import {
   type TopicHealth,
 } from "./types";
 import { LiveState } from "./liveState";
+import { standingsBefore } from "./standings";
+import type { Point } from "./types";
 
 export const DEFAULT_BRIDGE_URL = "ws://localhost:8765";
 
@@ -52,6 +54,26 @@ export class LiveBridgeSource implements F1DataSource {
 
   getSnapshot(): F1Snapshot {
     return this.snapshot;
+  }
+
+  pastLocation(driver: number, secondsAgo: number): Point | null {
+    const t = this.renderTime() - secondsAgo * 1000;
+    return this.state.locations.sample(driver, t);
+  }
+
+  private renderTime(): number {
+    return Date.now() - (this.state.latency ?? 0) - RENDER_BUFFER_MS;
+  }
+
+  /** Fetch championship standings once the session (and so its date) is known. */
+  private standingsRequested: string | null = null;
+  private maybeLoadStandings(): void {
+    const session = this.snapshot.session;
+    if (!session?.year || !session.date) return;
+    const day = new Date(session.date).toISOString().slice(0, 10);
+    if (this.standingsRequested === day) return;
+    this.standingsRequested = day;
+    void standingsBefore(session.year, day).then((standings) => standings && this.patch({ standings }));
   }
 
   status(): SourceStatus {
@@ -171,15 +193,18 @@ export class LiveBridgeSource implements F1DataSource {
       next = this.state.build(next);
       this.dirty = false;
     }
+    next = { ...next, now: this.renderTime() };
     const latest = this.state.locations.latestTime();
     if (latest != null) {
-      const renderAt = Date.now() - (this.state.latency ?? 0) - RENDER_BUFFER_MS;
+      const renderAt = this.renderTime();
       const all = this.state.locations.sampleAll(Math.min(renderAt, latest));
       for (const n of Object.keys(all)) if (this.state.isRetired(Number(n))) delete all[Number(n)];
       next = { ...next, locations: all };
     }
     if (next !== this.snapshot) {
+      const hadSession = this.snapshot.session;
       this.snapshot = next;
+      if (next.session && next.session !== hadSession) this.maybeLoadStandings();
       this.emit();
     }
   }

@@ -4,6 +4,9 @@
 import type {
   CarTelemetry,
   DriverState,
+  LapRecord,
+  LapTrace,
+  Standings,
   Point,
   RaceControlMessage,
   RadioMessage,
@@ -70,6 +73,8 @@ export interface TimelineDataset {
   driverStatus?: RawDriverStatus[];
   track: TrackLayout | null;
   telemetry: TelemetryProvider;
+  /** Championship points before this race, when known. */
+  standings?: Standings | null;
 }
 
 interface LapEntry {
@@ -93,6 +98,7 @@ export interface HeavyState {
   raceControl: RaceControlMessage[];
   weather: Weather | null;
   lap: { current: number | null; total: number | null };
+  history: Record<number, LapRecord[]>;
 }
 
 const RETIRE_GRACE_MS = 120_000;
@@ -135,6 +141,9 @@ export class Timeline {
   private weather: Array<{ t: number; v: Weather }>;
   private retireAt = new Map<number, number>();
   private totalLaps: number | null;
+  /** Every completed lap per driver, sorted by completion time. */
+  private lapRecords = new Map<number, LapRecord[]>();
+  private historyCache: { count: number; value: Record<number, LapRecord[]> } | null = null;
 
   constructor(private ds: TimelineDataset) {
     this.start = ds.start;
@@ -208,6 +217,150 @@ export class Timeline {
     for (const arr of this.laps.values()) for (const l of arr) maxLap = Math.max(maxLap, l.number);
     this.totalLaps = ds.totalLaps ?? (maxLap || null);
     if (!ds.driverStatus?.length) this.inferRetirements();
+    this.buildLapRecords();
+  }
+
+  private stintFor(driver: number, lapNumber: number | null): RawStint | null {
+    const stints = this.stints.get(driver) ?? [];
+    let stint: RawStint | null = null;
+    for (const s of stints) {
+      const startLap = s.lap_start ?? 1;
+      if (lapNumber == null ? s === stints[0] : startLap <= lapNumber) stint = s;
+    }
+    return stint;
+  }
+
+  private tyreAge(stint: RawStint | null, lapNumber: number | null): number | null {
+    if (!stint || stint.tyre_age_at_start == null) return null;
+    return stint.tyre_age_at_start + Math.max(0, (lapNumber ?? stint.lap_start ?? 1) - (stint.lap_start ?? 1));
+  }
+
+  private buildLapRecords(): void {
+    const pitLaps = new Map<number, Set<number>>();
+    for (const [driver, rows] of this.pits) {
+      pitLaps.set(driver, new Set(rows.map((r) => num(r.v.lap_number)).filter((n): n is number => n != null)));
+    }
+    const pitOutLaps = new Map<number, Set<number>>();
+    for (const r of this.ds.laps) {
+      if (r.is_pit_out_lap && r.lap_number != null) {
+        const set = pitOutLaps.get(r.driver_number) ?? new Set<number>();
+        set.add(r.lap_number);
+        pitOutLaps.set(r.driver_number, set);
+      }
+    }
+    for (const [driver, laps] of this.laps) {
+      const records: LapRecord[] = [];
+      for (const l of laps) {
+        if (l.end == null) continue;
+        const stint = this.stintFor(driver, l.number);
+        const gap = latest(this.intervals.get(driver), l.end)?.gap_to_leader;
+        // OpenF1 has no pit-out flag for some sessions; a new stint starting on this lap means the same.
+        const stintStart = stint?.lap_start === l.number && (stint.stint_number ?? 1) > 1;
+        records.push({
+          lap: l.number,
+          end: l.end,
+          time: l.duration,
+          sectors: l.sectors,
+          compound: compoundCode(stint?.compound),
+          tyreAge: this.tyreAge(stint, l.number),
+          position: num(latest(this.positions.get(driver), l.end)?.position),
+          gap: typeof gap === "number" ? gap : typeof gap === "string" && /^\+?\d+(\.\d+)?$/.test(gap) ? Number(gap) : null,
+          pitIn: pitLaps.get(driver)?.has(l.number) ?? false,
+          pitOut: (pitOutLaps.get(driver)?.has(l.number) ?? false) || stintStart,
+        });
+      }
+      records.sort((a, b) => a.end - b.end);
+      this.lapRecords.set(driver, records);
+    }
+  }
+
+  /** Completed laps as of `t`; the same object is returned until a new lap completes. */
+  historyAt(t: number): Record<number, LapRecord[]> {
+    const out: Record<number, LapRecord[]> = {};
+    let count = 0;
+    const cut = new Map<number, number>();
+    for (const [driver, recs] of this.lapRecords) {
+      let lo = 0, hi = recs.length;
+      while (lo < hi) {
+        const mid = (lo + hi) >> 1;
+        if (recs[mid].end <= t) lo = mid + 1;
+        else hi = mid;
+      }
+      cut.set(driver, lo);
+      count = count * 31 + lo + 1;
+    }
+    if (this.historyCache && this.historyCache.count === count) return this.historyCache.value;
+    for (const [driver, n] of cut) out[driver] = this.lapRecords.get(driver)!.slice(0, n);
+    this.historyCache = { count, value: out };
+    return out;
+  }
+
+  get standings(): Standings | null {
+    return this.ds.standings ?? null;
+  }
+
+  /** Start and end (epoch ms) of a driver's lap, if it was completed. */
+  lapWindow(driver: number, lap: number): { start: number; end: number } | null {
+    const l = this.laps.get(driver)?.find((x) => x.number === lap);
+    return l && l.end != null ? { start: l.t, end: l.end } : null;
+  }
+
+  /** Load (or reuse) every telemetry chunk overlapping [from, to]. */
+  async chunksFor(from: number, to: number): Promise<TelemetryChunk[]> {
+    const first = this.chunkIndex(from), last = this.chunkIndex(to);
+    const out: TelemetryChunk[] = [];
+    for (let i = Math.max(0, first); i <= last; i++) {
+      const cached = this.chunkAt(i);
+      if (cached) {
+        out.push(cached);
+        continue;
+      }
+      const start = this.start + i * this.ds.telemetry.chunkMs;
+      const chunk = await this.ds.telemetry.loadChunk(start, start + this.ds.telemetry.chunkMs);
+      if (!this.chunks.has(i) || this.chunks.get(i) === "loading" || this.chunks.get(i) === "error") this.chunks.set(i, chunk);
+      out.push(chunk);
+    }
+    return out;
+  }
+
+  /** Interpolated position of one car at time t, from loaded telemetry only. */
+  locationAt(driver: number, t: number): Point | null {
+    const idx = this.chunkIndex(t);
+    const here = this.chunkAt(idx)?.location.get(driver);
+    if (!here) return null;
+    const i = lastIndexAtOrBefore(here, t);
+    const a = i >= 0 ? here[i] : this.chunkAt(idx - 1)?.location.get(driver)?.at(-1);
+    const b = i + 1 < here.length ? here[i + 1] : this.chunkAt(idx + 1)?.location.get(driver)?.[0];
+    if (a && b) return lerpSample(a, b, t, 5000);
+    return a && Math.abs(t - a.t) < 5000 ? { x: a.x, y: a.y } : null;
+  }
+
+  /** One lap of telemetry, with x as the fraction of lap distance along the circuit. */
+  async lapTrace(driver: number, lap: number, distanceOf: (p: Point) => number | null): Promise<LapTrace | null> {
+    const w = this.lapWindow(driver, lap);
+    if (!w) return null;
+    const chunks = await this.chunksFor(w.start, w.end);
+    const cars = chunks.flatMap((c) => c.car.get(driver) ?? []).filter((s) => s.t >= w.start && s.t <= w.end);
+    const locs = chunks.flatMap((c) => c.location.get(driver) ?? []).sort((a, b) => a.t - b.t);
+    if (cars.length < 5) return null;
+    const samples: LapTrace["samples"] = [];
+    let prevX = -1;
+    for (const s of cars.sort((a, b) => a.t - b.t)) {
+      let x: number | null = null;
+      if (locs.length) {
+        const i = lastIndexAtOrBefore(locs, s.t);
+        const a = locs[Math.max(0, i)], b = locs[Math.min(locs.length - 1, i + 1)];
+        x = distanceOf(lerpSample(a, b, s.t, 5000));
+      }
+      // Fall back to the share of lap time when the car's position is unknown.
+      if (x == null) x = (s.t - w.start) / (w.end - w.start);
+      // Near the line the projection can wrap; keep the trace moving forward.
+      if (prevX > 0.5 && x < 0.2) x += 1;
+      if (x > 1.05 || x < prevX - 0.02) continue;
+      prevX = Math.max(prevX, x);
+      samples.push({ x: Math.min(1, x), speed: s.speed, throttle: s.throttle, brake: s.brake, gear: s.gear });
+    }
+    return samples.length >= 5 ? { driver, lap, samples } : null;
   }
 
   private indexLaps(rows: RawLap[]): void {
@@ -314,6 +467,7 @@ export class Timeline {
       raceControl: tail(this.raceControl),
       weather: wi >= 0 ? this.weather[wi].v : null,
       lap: { current: leaderLap != null && total != null ? Math.min(leaderLap, total) : leaderLap, total },
+      history: this.historyAt(t),
     };
   }
 
@@ -344,16 +498,8 @@ export class Timeline {
     const iv = latest(this.intervals.get(n), t);
     const lapNumber = cur?.number ?? null;
 
-    const stints = this.stints.get(n) ?? [];
-    let stint: RawStint | null = null;
-    for (const s of stints) {
-      const startLap = s.lap_start ?? 1;
-      if (lapNumber == null ? s === stints[0] : startLap <= lapNumber) stint = s;
-    }
-    const age =
-      stint && stint.tyre_age_at_start != null
-        ? stint.tyre_age_at_start + Math.max(0, (lapNumber ?? stint.lap_start ?? 1) - (stint.lap_start ?? 1))
-        : null;
+    const stint = this.stintFor(n, lapNumber);
+    const age = this.tyreAge(stint, lapNumber);
 
     const pitRows = this.pits.get(n) ?? [];
     const pi = lastIndexAtOrBefore(pitRows, t);

@@ -4,6 +4,7 @@ import type {
   CarTelemetry,
   DriverState,
   F1Snapshot,
+  LapRecord,
   RaceControlMessage,
   RadioMessage,
   SectorStatus,
@@ -133,7 +134,10 @@ export class LiveState {
   private lap: { current: number | null; total: number | null } = { current: null, total: null };
   private track: TrackLayout | null = null;
   private trackBuilder = new LiveTrackBuilder();
-  readonly locations = new LocationInterpolator(5000, 30_000);
+  /** Kept for a minute so the pit-rejoin ghost can look ~25 s into the past. */
+  readonly locations = new LocationInterpolator(5000, 60_000);
+  private history: Record<number, LapRecord[]> = {};
+  private pitFlags = new Map<number, { pitIn: boolean; pitOut: boolean }>();
   /** Smoothed delay between a sample's feed timestamp and its arrival. */
   latency: number | null = null;
 
@@ -166,7 +170,14 @@ export class LiveState {
       case "driver_status":
         return this.patchDriver(r, (d, rec: RawDriverStatus) => {
           if (rec.retired != null) d.retired = rec.retired;
-          if (rec.in_pit != null) d.inPit = rec.in_pit;
+          if (rec.in_pit != null) {
+            // Entering the pits marks the lap being run as an in-lap, leaving marks the next as an out-lap.
+            const flags = this.pitFlags.get(d.number) ?? { pitIn: false, pitOut: false };
+            if (rec.in_pit && !d.inPit) flags.pitIn = true;
+            if (!rec.in_pit && d.inPit) flags.pitOut = true;
+            this.pitFlags.set(d.number, flags);
+            d.inPit = rec.in_pit;
+          }
           if (rec.pit_stops != null) d.pitStops = rec.pit_stops;
         });
       case "car_data":
@@ -182,10 +193,13 @@ export class LiveState {
       case "session":
         this.session = {
           key: (r.session_key as number | undefined) ?? null,
-          name: String(r.session_name ?? "Live session"),
+          name: String(r.meeting_name ?? r.session_name ?? "Live session"),
+          place: r.location != null ? String(r.location) : null,
           circuit: String(r.circuit_short_name ?? r.location ?? "--"),
           country: String(r.country_name ?? "--"),
           year: num(r.year),
+          session: r.session_name != null ? String(r.session_name) : null,
+          date: parseDate(r.date_start as string | null | undefined),
         };
         return true;
       case "lap_count": {
@@ -263,7 +277,30 @@ export class LiveState {
         copy.sectorStatus = next;
       }
     }
+    if (has(raw, "lap_duration")) this.recordLap(n, d, r);
     return true;
+  }
+
+  private recordLap(n: number, d: DriverState, r: RawLap): void {
+    const lap = r.lap_number ?? d.lapNumber;
+    const prev = this.history[n] ?? [];
+    if (lap == null || (prev.length && prev[prev.length - 1].lap >= lap)) return;
+    const flags = this.pitFlags.get(n) ?? { pitIn: false, pitOut: false };
+    const record: LapRecord = {
+      lap,
+      end: parseDate(r.date) ?? Date.now(),
+      time: num(r.lap_duration),
+      sectors: [...d.sectors] as LapRecord["sectors"],
+      compound: d.tyre.compound,
+      tyreAge: d.tyre.age,
+      position: d.position,
+      gap: typeof d.gapToLeader === "number" ? d.gapToLeader : null,
+      pitIn: flags.pitIn || d.inPit,
+      pitOut: flags.pitOut,
+    };
+    // A car that pitted on this lap starts the next lap as an out-lap.
+    this.pitFlags.set(n, { pitIn: false, pitOut: flags.pitIn && !d.inPit ? true : false });
+    this.history = { ...this.history, [n]: [...prev, record] };
   }
 
   private applyStint(r: RawStint): boolean {
@@ -401,6 +438,7 @@ export class LiveState {
       raceControl: this.raceControl,
       weather: this.weather,
       track: this.track,
+      history: this.history,
     };
   }
 

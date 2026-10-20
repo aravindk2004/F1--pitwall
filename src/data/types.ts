@@ -90,6 +90,8 @@ export interface Weather {
 
 export interface TrackLayout {
   points: Point[];
+  /** Lap fraction (0–1) of each point, when known; otherwise derived from distance. */
+  rel?: number[];
   /** Index ranges into `points` where DRS was open on the reference lap. */
   drsZones: Array<[number, number]>;
   /** Turn numbers, in the same coordinate space as `points`. */
@@ -135,6 +137,37 @@ export interface PlaybackState {
   end: number;
 }
 
+/** One completed lap of one car, as known when it crossed the line. */
+export interface LapRecord {
+  lap: number;
+  /** Epoch ms the lap was completed. */
+  end: number;
+  time: number | null;
+  sectors: Sectors<number | null>;
+  compound: string | null;
+  tyreAge: number | null;
+  position: number | null;
+  /** Seconds behind the leader at the line; null when lapped or unknown. */
+  gap: number | null;
+  pitIn: boolean;
+  pitOut: boolean;
+}
+
+/** Championship points before this race started. */
+export interface Standings {
+  /** Matched by number, or by three-letter code when the number is unknown. */
+  drivers: Array<{ number: number | null; code?: string | null; points: number }>;
+  constructors: Array<{ team: string; points: number }>;
+}
+
+/** One lap of speed/throttle/brake, for comparing two drivers. */
+export interface LapTrace {
+  driver: number;
+  lap: number;
+  /** x is the fraction of the lap distance (0–1). */
+  samples: Array<{ x: number; speed: number | null; throttle: number | null; brake: number | null; gear: number | null }>;
+}
+
 export interface F1Snapshot {
   session: SessionInfo | null;
   lap: { current: number | null; total: number | null };
@@ -147,6 +180,11 @@ export interface F1Snapshot {
   raceControl: RaceControlMessage[];
   weather: Weather | null;
   track: TrackLayout | null;
+  /** Completed laps per driver, oldest first. */
+  history: Record<number, LapRecord[]>;
+  standings: Standings | null;
+  /** The source's own clock (epoch ms): playback time in replays, wall time live. */
+  now: number | null;
   topics: Partial<Record<Topic, TopicHealth>>;
   playback: PlaybackState | null;
   loading: string | null;
@@ -192,6 +230,10 @@ export interface ReplayControls {
 export type Listener = (snapshot: F1Snapshot) => void;
 
 export interface F1DataSource {
+  /** Where a car was `secondsAgo` before the source's current time (for the pit-rejoin ghost). */
+  pastLocation?(driver: number, secondsAgo: number): Point | null;
+  /** Speed trace of one lap; resolves null when the source has no telemetry for it. */
+  lapTrace?(driver: number, lap: number): Promise<LapTrace | null>;
   subscribe(listener: Listener): () => void;
   getSnapshot(): F1Snapshot;
   status(): SourceStatus;
@@ -214,6 +256,9 @@ export function emptySnapshot(): F1Snapshot {
     raceControl: [],
     weather: null,
     track: null,
+    history: {},
+    standings: null,
+    now: null,
     topics: {},
     playback: null,
     loading: null,

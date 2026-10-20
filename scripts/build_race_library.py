@@ -206,6 +206,49 @@ def round_list(values, nd=0):
     return [None if v is None else (int(round(v)) if nd == 0 else round(float(v), nd)) for v in values]
 
 
+# --- championship ---------------------------------------------------------------
+
+
+def standings_before(season: int, f1db_dir: str, results: list, drivers: list) -> dict:
+    """Driver and constructor points after the previous round (empty before round 1).
+
+    Drivers are keyed by race number where this race's results know it, otherwise by
+    the three-letter code from F1DB. Constructors use the team names from this race.
+    """
+    dirs = [d for _, d in RACES[season]]
+    i = dirs.index(f1db_dir)
+    if i == 0:
+        return {"drivers": [], "constructors": []}
+    prev = f"seasons/{season}/races/{dirs[i - 1]}/"
+    ds = fetch_yaml(F1DB_BASE + prev + "driver-standings.yml") or []
+    cs = fetch_yaml(F1DB_BASE + prev + "constructor-standings.yml") or []
+    number_by_id = {r["driverId"]: int(r["driverNumber"]) for r in results if r.get("driverNumber") is not None}
+    code_by_number = {int(d["dn"]): d["driver"] for d in drivers}
+    team_by_number = {int(d["dn"]): d.get("team") for d in drivers}
+    team_by_constructor = {}
+    for r in results:
+        n = r.get("driverNumber")
+        if n is not None and r.get("constructorId") and team_by_number.get(int(n)):
+            team_by_constructor.setdefault(r["constructorId"], team_by_number[int(n)])
+
+    out_drivers = []
+    for row in ds:
+        number = number_by_id.get(row["driverId"])
+        code = code_by_number.get(number) if number is not None else None
+        if number is None:  # not entered in this race: look up their code
+            info = fetch_yaml(F1DB_BASE + f"drivers/{row['driverId']}.yml") or {}
+            code = info.get("abbreviation")
+        out_drivers.append({"number": number, "code": code, "points": float(row.get("points") or 0)})
+    out_teams = []
+    for row in cs:
+        team = team_by_constructor.get(row["constructorId"])
+        if not team:
+            info = fetch_yaml(F1DB_BASE + f"constructors/{row['constructorId']}.yml") or {}
+            team = info.get("name") or row["constructorId"]
+        out_teams.append({"team": team, "points": float(row.get("points") or 0)})
+    return {"drivers": out_drivers, "constructors": out_teams}
+
+
 # --- one race -----------------------------------------------------------------
 
 
@@ -621,6 +664,7 @@ def build_race(season: int, event: str, f1db_dir: str, out_root: Path) -> dict |
         "intervalsPacked": [[round((ts_ms(i["date"]) - start) / 1000, 1), i["driver_number"], i["gap_to_leader"],
                              i["interval"]] for i in intervals], "stints": stints, "pits": pits,
         "driverStatus": driver_status, "raceControl": race_control, "weather": weather,
+        "standings": standings_before(season, f1db_dir, results, drivers),
         "radio": radio, "track": track,
     }
     (out / "race.json").write_text(json.dumps(race, separators=(",", ":"), default=float))
@@ -629,10 +673,23 @@ def build_race(season: int, event: str, f1db_dir: str, out_root: Path) -> dict |
     return summary
 
 
+def refresh_standings(season: int, event: str, f1db_dir: str, race_file: Path) -> None:
+    results = fetch_yaml(F1DB_BASE + f"seasons/{season}/races/{f1db_dir}/race-results.yml") or []
+    drivers = (fetch_json(ti_url(season, event, "drivers.json")) or {}).get("drivers") or []
+    race = json.loads(race_file.read_text())
+    race["standings"] = standings_before(season, f1db_dir, results, drivers)
+    race_file.write_text(json.dumps(race, separators=(",", ":"), default=float))
+    print(f"  standings updated: {race_file}")
+
+
 def main() -> None:
     p = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     p.add_argument("filters", nargs="*", help="only races whose name contains one of these words")
     p.add_argument("--out", default="public/races", help="output folder (default public/races)")
+    p.add_argument("--skip-existing", action="store_true",
+                   help="only build races that are not in the output folder yet (for scheduled updates)")
+    p.add_argument("--refresh-standings", action="store_true",
+                   help="only update championship standings in races already built")
     p.add_argument("--season", type=int, action="append", choices=sorted(RACES),
                    help="season to build; repeat for several (default: all)")
     args = p.parse_args()
@@ -646,6 +703,13 @@ def main() -> None:
     for season in args.season or sorted(RACES):
         for event, f1db_dir in RACES[season]:
             if args.filters and not any(f.lower() in event.lower() for f in args.filters):
+                continue
+            race_file = out / str(season) / f1db_dir.split("-", 1)[1] / "race.json"
+            if args.refresh_standings:
+                if race_file.exists():
+                    refresh_standings(season, event, f1db_dir, race_file)
+                continue
+            if args.skip_existing and race_file.exists():
                 continue
             summary = build_race(season, event, f1db_dir, out)
             if not summary:
