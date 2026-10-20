@@ -277,7 +277,8 @@ export class LiveState {
         copy.sectorStatus = next;
       }
     }
-    if (has(raw, "lap_duration")) this.recordLap(n, d, r);
+    // OpenF1 sends a lap when it starts (no time yet) and again when complete; record completed laps only.
+    if (r.lap_duration != null) this.recordLap(n, d, r);
     return true;
   }
 

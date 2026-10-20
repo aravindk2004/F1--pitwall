@@ -129,11 +129,13 @@ export class LiveBridgeSource implements F1DataSource {
     ws.onerror = () => {
       /* onclose follows and handles reconnect */
     };
-    ws.onclose = () => {
+    ws.onclose = (ev) => {
       if (this.ws !== ws) return;
       this.connected = false;
       this.ws = null;
-      this.scheduleReconnect(`Bridge not reachable at ${this.url}`);
+      // 4401: the bridge was started with --token and this URL has none or the wrong one.
+      const reason = ev.code === 4401 ? "The bridge rejected the access token (add ?token=… to the bridge URL)" : `Bridge not reachable at ${this.url}`;
+      this.scheduleReconnect(reason);
     };
   }
 

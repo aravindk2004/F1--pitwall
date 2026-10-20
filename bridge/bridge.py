@@ -6,7 +6,8 @@ OpenF1-shaped records and serves them on ``ws://localhost:8765`` as
 ``{"topic": "...", "data": {...}}`` messages.
 
 Usage:
-    python bridge.py                       # live, during a session
+    python bridge.py                       # live, during a session (FastF1, needs F1TV)
+    python bridge.py --source openf1       # live from OpenF1's paid real-time API
     python bridge.py --record session.txt  # live, and keep the raw feed
     python bridge.py --replay-file session.txt --speed 5   # re-play a recording
 """
@@ -16,12 +17,14 @@ from __future__ import annotations
 import argparse
 import ast
 import asyncio
+import hmac
 import json
 import logging
 import os
 import signal
 import threading
 import time
+import urllib.parse
 from collections import deque
 from datetime import datetime, timezone
 from typing import Any
@@ -33,15 +36,16 @@ from translator import FeedTranslator
 log = logging.getLogger("f1-bridge")
 
 # Topics whose records describe a single driver; the newest one is cached per driver.
-PER_DRIVER = {"drivers", "position", "intervals", "laps", "stints", "driver_status", "car_data", "location"}
-# Topics kept as a short history for clients that connect mid-session.
-HISTORY = {"team_radio": 40, "race_control": 40}
+PER_DRIVER = {"drivers", "position", "intervals", "stints", "driver_status", "car_data", "location"}
+# Topics kept as a history for clients that connect mid-session (laps give them the lap charts).
+HISTORY = {"team_radio": 40, "race_control": 40, "pit": 100, "laps": 8000}
 
 
 class Hub:
     """Fans translated records out to every connected browser."""
 
-    def __init__(self) -> None:
+    def __init__(self, token: str | None = None) -> None:
+        self.token = token
         self.clients: set[ServerConnection] = set()
         self.translator = FeedTranslator()
         self.latest: dict[tuple[str, Any], dict] = {}
@@ -65,10 +69,14 @@ class Hub:
             log.exception("could not translate %s", topic)
             return
         for out_topic, record in outputs:
-            self._remember(out_topic, record)
-            self.messages += 1
-            if self.clients:
-                broadcast(self.clients, json.dumps({"topic": out_topic, "data": record}, default=str))
+            self.publish(out_topic, record)
+
+    def publish(self, topic: str, record: dict) -> None:
+        """Send one dashboard record to every client (and keep it for late joiners)."""
+        self._remember(topic, record)
+        self.messages += 1
+        if self.clients:
+            broadcast(self.clients, json.dumps({"topic": topic, "data": record}, default=str))
 
     def snapshot_messages(self) -> list[str]:
         """Everything a newly connected client needs to render the current state."""
@@ -82,6 +90,13 @@ class Hub:
         return out
 
     async def handler(self, ws: ServerConnection) -> None:
+        if self.token:
+            query = urllib.parse.parse_qs(urllib.parse.urlsplit(ws.request.path).query)
+            given = (query.get("token") or [""])[0]
+            if not hmac.compare_digest(given, self.token):
+                log.warning("rejected a client with a missing or wrong token")
+                await ws.close(4401, "invalid token")
+                return
         self.clients.add(ws)
         log.info("client connected (%d total)", len(self.clients))
         try:
@@ -193,7 +208,7 @@ async def replay_file(hub: Hub, path: str, speed: float, loop_forever: bool) -> 
 
 
 async def main(args: argparse.Namespace) -> None:
-    hub = Hub()
+    hub = Hub(args.token)
     loop = asyncio.get_running_loop()
     stop = loop.create_future()
     for sig in (signal.SIGINT, signal.SIGTERM):
@@ -205,8 +220,16 @@ async def main(args: argparse.Namespace) -> None:
     async with serve(hub.handler, args.host, args.port, max_size=2**22) as server:
         log.info("serving on ws://%s:%d", args.host, args.port)
         client = None
+        if args.token:
+            log.info("clients must connect with ?token=<your token>")
         if args.replay_file:
             loop.create_task(replay_file(hub, args.replay_file, args.speed, args.loop))
+        elif args.source == "openf1":
+            from openf1_live import OpenF1Live
+
+            if not (args.openf1_user and args.openf1_pass):
+                raise SystemExit("--source openf1 needs --openf1-user and --openf1-pass (or OPENF1_USERNAME / OPENF1_PASSWORD)")
+            loop.create_task(OpenF1Live(args.openf1_user, args.openf1_pass, hub.publish).run())
         else:
             client = start_live_client(hub, loop, args)
 
@@ -235,6 +258,12 @@ def cli() -> argparse.Namespace:
     p = argparse.ArgumentParser(description="Forward F1 live timing to the dashboard over WebSocket.")
     p.add_argument("--host", default="127.0.0.1", help="interface to bind (default 127.0.0.1)")
     p.add_argument("--port", type=int, default=8765, help="WebSocket port (default 8765)")
+    p.add_argument("--source", choices=["fastf1", "openf1"], default="fastf1",
+                   help="live data source: FastF1's connection to F1 live timing (default), or OpenF1's real-time API")
+    p.add_argument("--openf1-user", default=os.environ.get("OPENF1_USERNAME"), help="OpenF1 account (or OPENF1_USERNAME)")
+    p.add_argument("--openf1-pass", default=os.environ.get("OPENF1_PASSWORD"), help="OpenF1 password (or OPENF1_PASSWORD)")
+    p.add_argument("--token", default=os.environ.get("BRIDGE_TOKEN"),
+                   help="require clients to connect with ?token=TOKEN (or BRIDGE_TOKEN); use when the bridge is on a server")
     p.add_argument("--record", metavar="FILE", help="also append the raw feed to FILE (replayable later)")
     p.add_argument("--no-auth", action="store_true", help="connect without F1TV authentication (may give partial data)")
     p.add_argument("--timeout", type=int, default=0,
